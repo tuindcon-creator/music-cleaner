@@ -20,7 +20,7 @@ class DirectInputTests(unittest.TestCase):
                 audio.setsampwidth(2)
                 audio.setframerate(22050)
                 audio.writeframes(array("h", [1000, -1000] * 11025).tobytes())
-            with patch("subprocess.check_output", side_effect=PermissionError("WinError 5: ffprobe denied")) as probe:
+            with patch("demucs.audio._read_info", side_effect=PermissionError("WinError 5: ffprobe denied")) as probe:
                 result = load_track(path, 2, 44100)
             probe.assert_not_called()
             self.assertEqual(tuple(result.shape), (2, 44100))
