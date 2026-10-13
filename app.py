@@ -632,6 +632,7 @@ class Window(QMainWindow):
             self.logs.appendPlainText("Đang dừng đọc sóng âm; đóng cửa sổ lại sau giây lát.")
         else:
             self.player.stop()
+            self.player.setSource(QUrl())
             event.accept()
 
 

@@ -9,6 +9,7 @@ from array import array
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtTest import QTest
 from app import Window, STYLE
 
@@ -48,6 +49,9 @@ class InterfaceTests(unittest.TestCase):
             worker.wait(10000)
         self.app.processEvents()
         window.close()
+        self.assertTrue(window.player.source().isEmpty())
+        window.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         self.app.processEvents()
         self.temp.cleanup()
     def test_selected_file_waveform_and_error_remain_consistent(self):
