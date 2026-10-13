@@ -1,0 +1,8 @@
+PySide6==6.8.3
+imageio-ffmpeg==0.6.0
+numpy==1.26.4
+soundfile==0.13.1
+torch==2.5.1
+torchaudio==2.5.1
+demucs==4.0.1
+
