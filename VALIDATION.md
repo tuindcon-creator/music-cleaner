@@ -1,8 +1,9 @@
 # Kiểm chứng
 
-- Bản tự cấu hình: 16 kiểm thử đạt trên Linux/Python 3.12, gồm trích video, xuất định dạng, tên trùng, hủy/dọn file, chọn cấu hình, chia/ghép file và GPU lỗi quay về CPU.
-- GUI mở được offscreen và mặc định chọn thiết bị tự động.
-- Nhánh Windows mới kiểm tra setup_windows.ps1 thật, môi trường .venv, Demucs CLI, kiểm thử và GUI. Xem trạng thái tại GitHub Actions.
-- Bản trước đã cài thư viện và chạy 7 kiểm thử cùng GUI smoke check trên Windows/Python 3.11.
-- Chưa kiểm thử trên GPU vật lý, Mac, Windows không có Python/winget, hoặc tách mô hình thật trên bản thu thật.
-- Không bảo đảm chất lượng tách lời thoại hoặc chạy trên máy không đủ RAM/đĩa.
+- Windows trước bản sửa ffprobe: bộ cài thật, 16 kiểm thử và GUI offscreen đạt.
+- Lỗi thực tế: Demucs CLI gọi ffprobe trên PATH; Windows trả PermissionError WinError 5 sau một số đoạn đã tách thành công trên RTX 3060.
+- Bản sửa dùng SoundFile đọc WAV đã giải mã và Demucs convert_audio, không gọi ffprobe.
+- Có kiểm thử hồi quy giả lập ffprobe bị từ chối quyền và kiểm tra kênh/tần số mẫu.
+- 16 kiểm thử xử lý và cấu hình đạt trên Linux; kiểm thử đọc WAV trực tiếp cần bộ PyTorch/Demucs đầy đủ, được chạy trên Windows CI.
+- Giao diện lỗi và trạng thái kết thúc đã kiểm tra offscreen.
+- Chưa chạy lại bản thu 26 phút của người dùng hoặc thử trên GPU vật lý sau bản sửa.

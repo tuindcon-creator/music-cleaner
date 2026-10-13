@@ -13,6 +13,7 @@
 Có thể mở install_windows.bat riêng để cài lại thư viện hoặc sửa môi trường.
 Nếu winget không có hoặc bị quản trị viên chặn, cài Python 3.11 64-bit từ python.org rồi chạy lại.
 Không cần cài FFmpeg riêng. Cần Internet cho bộ cài và lần đầu tải mô hình AI.
+AI đọc trực tiếp WAV đã giải mã, không gọi ffprobe trên PATH của Windows.
 Sau khi thư viện và mô hình đã có trên máy, xử lý được offline; không tải media lên dịch vụ.
 
 ## Tự nhận diện cấu hình
@@ -47,6 +48,7 @@ Apple GPU được thử qua MPS, nhưng Demucs có thể cần quay về CPU.
 Xuất WAV, MP3 192 kbps hoặc FLAC. Tách AI xuất giong và nhac_nen; trích âm thanh xuất am_thanh.
 Mỗi file có thư mục riêng, thêm hậu tố khi tên trùng; file lỗi không chặn hàng đợi.
 Có nghe thử bản gốc/kết quả, sóng âm, nhật ký và nút dừng.
+Nếu lỗi, nguyên nhân hiện phía trên nhật ký; dùng Lưu nhật ký lỗi để xuất thông tin chẩn đoán.
 
 Demucs tách nguồn vocals/accompaniment, không bảo đảm lời thoại sạch tuyệt đối.
 Bản này tách toàn bộ file, chưa tự nhận diện từng đoạn có nhạc theo hình tham khảo.

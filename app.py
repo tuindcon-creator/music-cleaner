@@ -1,5 +1,6 @@
 import sys
 import threading
+import traceback
 from pathlib import Path
 from PySide6.QtCore import Qt, QThread, Signal, QUrl
 from PySide6.QtGui import QColor, QPainter, QPen, QDesktopServices
@@ -47,6 +48,7 @@ class BatchWorker(QThread):
     wave = Signal(list, float)
     output = Signal(int, list)
     log = Signal(str)
+    error = Signal(int, str)
     completed = Signal(int, int, bool)
     def __init__(self, files, root, mode, fmt, device):
         super().__init__()
@@ -79,7 +81,8 @@ class BatchWorker(QThread):
             except Exception as error:
                 failed += 1
                 self.status.emit(row, "Lỗi — xem nhật ký")
-                self.log.emit(str(error))
+                self.log.emit(traceback.format_exc())
+                self.error.emit(row, str(error))
         self.completed.emit(ok, failed, self.cancel.is_set())
 
 class Window(QMainWindow):
@@ -174,6 +177,15 @@ class Window(QMainWindow):
         layout.addLayout(actions)
         self.progress = QProgressBar()
         layout.addWidget(self.progress)
+        self.error_message = QLabel("")
+        self.error_message.setWordWrap(True)
+        self.error_message.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.error_message.setStyleSheet("color: #ff9393;")
+        self.error_message.hide()
+        layout.addWidget(self.error_message)
+        self.save_log = QPushButton("Lưu nhật ký lỗi")
+        self.save_log.clicked.connect(self.export_log)
+        layout.addWidget(self.save_log)
         self.logs = QPlainTextEdit()
         self.logs.setReadOnly(True)
         self.logs.setMaximumBlockCount(1000)
@@ -273,6 +285,8 @@ class Window(QMainWindow):
             return
         self.player.stop()
         self.progress.setValue(0)
+        self.progress.setFormat("%p%")
+        self.error_message.hide()
         self.outputs.clear()
         for row in range(len(self.files)):
             self.table.item(row, 1).setText("Chờ xử lý")
@@ -284,6 +298,7 @@ class Window(QMainWindow):
         self.worker.progress.connect(self.progress.setValue)
         self.worker.wave.connect(self.waveform.set_data)
         self.worker.log.connect(self.logs.appendPlainText)
+        self.worker.error.connect(self.show_error)
         self.worker.output.connect(self.add_output)
         self.worker.completed.connect(self.batch_summary)
         self.worker.finished.connect(lambda: self.lock(False))
@@ -302,6 +317,20 @@ class Window(QMainWindow):
                 if self.table.item(row, 1).text() == "Chờ xử lý":
                     self.table.item(row, 1).setText("Chưa xử lý — đã dừng")
         self.logs.appendPlainText(f"\n{'Đã dừng' if cancelled else 'Hoàn tất'}: {ok} thành công, {failed} lỗi.")
+        self.progress.setFormat(f"{'Đã dừng' if cancelled else 'Kết thúc'}: {ok} thành công, {failed} lỗi")
+    def show_error(self, row, message):
+        lines = [line.strip() for line in message.splitlines() if line.strip()]
+        details = [line for line in lines if "Error:" in line or "Exception:" in line]
+        reason = (details[-1] if details else lines[-1] if lines else "Lỗi không có thông tin")
+        self.error_message.setText(f"{Path(self.files[row]).name}: {reason[:350]}")
+        self.error_message.show()
+    def export_log(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Lưu nhật ký", "music-cleaner-log.txt", "Text (*.txt)")
+        if path:
+            try:
+                Path(path).write_text(self.logs.toPlainText(), encoding="utf-8")
+            except OSError as error:
+                QMessageBox.warning(self, "Không lưu được nhật ký", str(error))
     def cancel_batch(self):
         if self.worker:
             self.worker.cancel.set()

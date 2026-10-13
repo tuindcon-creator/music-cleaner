@@ -74,7 +74,7 @@ class ProcessingTests(unittest.TestCase):
     def test_demucs_orchestration_with_stubbed_model(self):
         real_command = engine.command
         def stub(args, cancel, log=lambda *a: None, env=None):
-            if len(args) > 2 and args[1:3] == ["-m", "demucs"]:
+            if len(args) > 1 and str(args[1]).endswith("demucs_runner.py"):
                 import shutil
                 destination = Path(args[args.index("-o")+1]) / "htdemucs" / "chunk"
                 destination.mkdir(parents=True)
@@ -102,7 +102,7 @@ class ProcessingTests(unittest.TestCase):
         profile = choose_profile("Windows", "AMD64", 4, 8, 4, vram=4, cuda_works=True)
         profile.chunk_seconds = 0.35
         def stub(args, cancel, log=lambda *a: None, env=None):
-            if len(args) > 2 and args[1:3] == ["-m", "demucs"]:
+            if len(args) > 1 and str(args[1]).endswith("demucs_runner.py"):
                 devices.append(args[args.index("--device") + 1])
                 if len(devices) == 1:
                     raise RuntimeError("CUDA out of memory")
@@ -123,7 +123,7 @@ class ProcessingTests(unittest.TestCase):
     def test_model_error_cleans_outputs(self):
         real_command = engine.command
         def stub(args, cancel, log=lambda *a: None, env=None):
-            if len(args) > 2 and args[1:3] == ["-m", "demucs"]:
+            if len(args) > 1 and str(args[1]).endswith("demucs_runner.py"):
                 raise RuntimeError("Model download failed")
             real_command(args, cancel, log)
         with patch.object(engine, "command", side_effect=stub):

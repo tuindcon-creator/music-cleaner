@@ -24,6 +24,9 @@ def command(args, cancel, log=lambda message: None, env=None):
     """Drain child output to disk to avoid pipe deadlocks and permit cancellation."""
     if cancel.is_set():
         raise Cancelled()
+    args = list(args)
+    if Path(str(args[0])).name.lower().startswith("ffmpeg"):
+        args[1:1] = ["-hide_banner", "-loglevel", "error", "-nostats"]
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     with tempfile.TemporaryFile() as output:
         process = subprocess.Popen([str(a) for a in args], stdout=output,
@@ -101,6 +104,8 @@ def separate_chunks(decoded, scratch, profile, cancel, phase, log):
     env = os.environ.copy()
     env["OMP_NUM_THREADS"] = str(profile.cpu_threads)
     env["MKL_NUM_THREADS"] = str(profile.cpu_threads)
+    env["PYTHONUNBUFFERED"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
     try:
         for index in range(chunks):
             phase(f"AI: đoạn {index+1}/{chunks} • {profile.device.upper()}",
@@ -109,7 +114,7 @@ def separate_chunks(decoded, scratch, profile, cancel, phase, log):
                      "-i", decoded, "-t", str(profile.chunk_seconds), "-c:a", "pcm_s16le",
                      input_path], cancel, log)
             def run_model():
-                command([sys.executable, "-m", "demucs", "-n", "htdemucs",
+                command([sys.executable, Path(__file__).with_name("demucs_runner.py"), "-n", "htdemucs",
                     "--two-stems", "vocals", "--device", profile.device,
                     "--shifts", "1", "--segment", str(profile.segment), "-j", "1",
                     "-o", scratch / "stems", input_path], cancel, log, env=env)

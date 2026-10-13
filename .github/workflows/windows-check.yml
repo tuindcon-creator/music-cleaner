@@ -12,7 +12,7 @@ jobs:
       - name: Real Windows installer
         shell: powershell
         run: .\setup_windows.ps1
-      - run: .venv\Scripts\python.exe -m demucs --help
+      - run: .venv\Scripts\python.exe demucs_runner.py --help
       - run: .venv\Scripts\python.exe -m unittest discover -s tests -v
       - name: GUI smoke check
         env:
