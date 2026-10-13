@@ -16,6 +16,16 @@ Không cần cài FFmpeg riêng. Cần Internet cho bộ cài và lần đầu t
 AI đọc trực tiếp WAV đã giải mã, không gọi ffprobe trên PATH của Windows.
 Sau khi thư viện và mô hình đã có trên máy, xử lý được offline; không tải media lên dịch vụ.
 
+## Giao diện mới
+
+Bố cục theo ảnh tham khảo: thông tin file ở trên, sóng âm có mốc thời gian, hàng đợi và khung nghe thử, phần xuất kết quả với nút xanh lớn.
+Sóng âm được đọc ngay sau khi chọn file và giữ đúng theo file đang chọn trong danh sách.
+Chỉnh âm lượng ở khung nghe thử. Chọn WAV/MP3/FLAC ở phần xuất file.
+Bấm **Tùy chọn** để đổi sang trích âm thanh hoặc chọn thiết bị; mặc định AI và thiết bị tự động.
+Bấm **Nhật ký xử lý** để xem chi tiết; nhật ký tự mở khi có lỗi.
+Tên file kết quả chỉ hiển thị, không phải ô đổi tên; mỗi file vẫn có thư mục xuất riêng.
+Bảng hiển thị hàng đợi, không phải các đoạn phát hiện nhạc. Không tô các vùng xanh/đỏ nhận diện nhạc khi chưa có chức năng này.
+
 ## Tự nhận diện cấu hình
 
 - Đọc hệ điều hành, kiến trúc, số luồng CPU, tổng RAM và RAM còn trống.
