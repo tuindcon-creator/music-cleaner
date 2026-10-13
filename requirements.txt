@@ -5,4 +5,5 @@ soundfile==0.13.1
 torch==2.5.1
 torchaudio==2.5.1
 demucs==4.0.1
+psutil==6.1.1
 

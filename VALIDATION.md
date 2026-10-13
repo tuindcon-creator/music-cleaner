@@ -1,9 +1,8 @@
 # Kiểm chứng
 
-- 7 kiểm thử xử lý đạt trên Windows/Python 3.11 và Linux/Python 3.12 với FFmpeg: trích video có âm thanh, xuất WAV/MP3/FLAC, tên trùng, waveform, video không có tiếng, hủy tác vụ và dọn file.
-- Kiểm thử điều phối Demucs dùng mô hình giả, kiểm tra đường dẫn và xuất hai stem.
-- Bộ phụ thuộc cài thành công trên Windows; Demucs CLI chạy được.
-- Giao diện PySide6 6.8.3 mở được ở chế độ offscreen trên Windows và Linux.
-- Windows workflow: https://github.com/tuindcon-creator/music-cleaner/actions/runs/38398235291
-- Chưa chạy tách AI với mô hình thật hoặc bản thu thật; chưa thử nghe trên thiết bị âm thanh Windows thực tế.
-- Chưa đo chất lượng tách lời thoại hoặc mức RAM trên file dài.
+- Bản tự cấu hình: 16 kiểm thử đạt trên Linux/Python 3.12, gồm trích video, xuất định dạng, tên trùng, hủy/dọn file, chọn cấu hình, chia/ghép file và GPU lỗi quay về CPU.
+- GUI mở được offscreen và mặc định chọn thiết bị tự động.
+- Nhánh Windows mới kiểm tra setup_windows.ps1 thật, môi trường .venv, Demucs CLI, kiểm thử và GUI. Xem trạng thái tại GitHub Actions.
+- Bản trước đã cài thư viện và chạy 7 kiểm thử cùng GUI smoke check trên Windows/Python 3.11.
+- Chưa kiểm thử trên GPU vật lý, Mac, Windows không có Python/winget, hoặc tách mô hình thật trên bản thu thật.
+- Không bảo đảm chất lượng tách lời thoại hoặc chạy trên máy không đủ RAM/đĩa.

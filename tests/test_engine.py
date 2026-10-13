@@ -9,6 +9,7 @@ from array import array
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import engine
+from hardware import choose_profile
 
 
 class ProcessingTests(unittest.TestCase):
@@ -72,10 +73,10 @@ class ProcessingTests(unittest.TestCase):
 
     def test_demucs_orchestration_with_stubbed_model(self):
         real_command = engine.command
-        def stub(args, cancel, log=lambda *a: None):
+        def stub(args, cancel, log=lambda *a: None, env=None):
             if len(args) > 2 and args[1:3] == ["-m", "demucs"]:
                 import shutil
-                destination = Path(args[args.index("-o")+1]) / "htdemucs" / "input"
+                destination = Path(args[args.index("-o")+1]) / "htdemucs" / "chunk"
                 destination.mkdir(parents=True)
                 for stem in ["vocals", "no_vocals"]:
                     shutil.copyfile(args[-1], destination / (stem + ".wav"))
@@ -94,6 +95,41 @@ class ProcessingTests(unittest.TestCase):
                 engine.command([sys.executable, "-c", "import time; time.sleep(30)"], self.cancel)
         finally:
             timer.cancel()
+
+    def test_multi_chunk_merge_and_gpu_failure_retries_on_cpu(self):
+        real_command = engine.command
+        devices = []
+        profile = choose_profile("Windows", "AMD64", 4, 8, 4, vram=4, cuda_works=True)
+        profile.chunk_seconds = 0.35
+        def stub(args, cancel, log=lambda *a: None, env=None):
+            if len(args) > 2 and args[1:3] == ["-m", "demucs"]:
+                devices.append(args[args.index("--device") + 1])
+                if len(devices) == 1:
+                    raise RuntimeError("CUDA out of memory")
+                import shutil
+                dest = Path(args[args.index("-o")+1]) / "htdemucs" / "chunk"
+                dest.mkdir(parents=True, exist_ok=True)
+                for name in ("vocals", "no_vocals"):
+                    shutil.copyfile(args[-1], dest / (name + ".wav"))
+            else:
+                real_command(args, cancel, log)
+        with patch.object(engine, "detect", return_value=profile):
+            with patch.object(engine, "command", side_effect=stub):
+                results = self.process(mode="separate")
+        self.assertEqual(devices, ["cuda", "cpu", "cpu", "cpu"])
+        with wave.open(results[0]) as audio:
+            self.assertAlmostEqual(audio.getnframes()/audio.getframerate(), 1, delta=0.01)
+
+    def test_model_error_cleans_outputs(self):
+        real_command = engine.command
+        def stub(args, cancel, log=lambda *a: None, env=None):
+            if len(args) > 2 and args[1:3] == ["-m", "demucs"]:
+                raise RuntimeError("Model download failed")
+            real_command(args, cancel, log)
+        with patch.object(engine, "command", side_effect=stub):
+            with self.assertRaisesRegex(RuntimeError, "download"):
+                self.process(mode="separate")
+        self.assertFalse(list((self.root / "out").iterdir()))
 
 if __name__ == "__main__":
     unittest.main()

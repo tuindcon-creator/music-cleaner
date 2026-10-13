@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
     QHeaderView, QProgressBar, QPlainTextEdit, QMessageBox, QSlider)
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from engine import SUPPORTED, process_file, Cancelled
+from hardware import detect, summary, validate_platform
 
 def clock(seconds):
     seconds = max(0, int(seconds))
@@ -53,6 +54,13 @@ class BatchWorker(QThread):
         self.cancel = threading.Event()
     def run(self):
         ok = failed = 0
+        try:
+            profile = detect(self.device, probe_gpu=self.mode != "extract")
+            self.log.emit(summary(profile))
+            device = profile.device
+        except Exception as error:
+            self.log.emit("Không đọc được cấu hình: " + str(error) + " — dùng CPU.")
+            device = "cpu"
         for row, source in enumerate(self.files):
             if self.cancel.is_set():
                 break
@@ -61,7 +69,7 @@ class BatchWorker(QThread):
                 def phase(text, value):
                     self.status.emit(row, text)
                     self.progress.emit(int((row + value/100) * 100 / len(self.files)))
-                outputs = process_file(source, self.root, self.mode, self.fmt, self.device,
+                outputs = process_file(source, self.root, self.mode, self.fmt, device,
                     self.cancel, phase, self.wave.emit, self.log.emit)
                 self.output.emit(row, outputs)
                 ok += 1
@@ -117,8 +125,10 @@ class Window(QMainWindow):
         self.fmt = QComboBox()
         self.fmt.addItems(["WAV", "MP3", "FLAC"])
         self.device = QComboBox()
-        self.device.addItem("CPU (mọi máy)", "cpu")
+        self.device.addItem("Tự động (khuyên dùng)", "auto")
+        self.device.addItem("CPU (tương thích)", "cpu")
         self.device.addItem("GPU NVIDIA (cần PyTorch CUDA)", "cuda")
+        self.device.addItem("Apple GPU (macOS)", "mps")
         for label, widget in [("Chức năng", self.mode), ("Định dạng", self.fmt), ("Thiết bị", self.device)]:
             settings.addWidget(QLabel(label))
             settings.addWidget(widget)
@@ -160,6 +170,10 @@ class Window(QMainWindow):
         self.logs.setMaximumBlockCount(1000)
         self.logs.setMaximumHeight(115)
         layout.addWidget(self.logs)
+        try:
+            self.logs.appendPlainText(summary(detect(probe_gpu=False)))
+        except Exception as error:
+            self.logs.appendPlainText("Chưa đọc được cấu hình: " + str(error))
         layout.addWidget(QLabel("AI xử lý toàn bộ file. Demucs tách nguồn giọng; chất lượng tùy bản thu. Lần đầu cần Internet tải mô hình."))
         self.add.clicked.connect(self.select_files)
         self.add_folder.clicked.connect(self.select_folder)
@@ -294,6 +308,7 @@ class Window(QMainWindow):
             event.accept()
 
 def main():
+    validate_platform()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setStyleSheet("""

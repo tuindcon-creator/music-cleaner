@@ -1,65 +1,63 @@
-# Music Cleaner — Windows 10/11
+# Music Cleaner — tự cấu hình máy
 
-Ứng dụng Python chạy local, giao diện tiếng Việt màu tối theo ảnh tham khảo.
+Ứng dụng tách giọng/nhạc nền, trích âm thanh từ video và xử lý hàng loạt, giao diện tiếng Việt.
 
-## Chức năng
+## Chạy trên Windows
 
-- Nhập nhiều file âm thanh hoặc video, hoặc thêm các file trong một thư mục.
-- AI tách toàn bộ file thành `giong` và `nhac_nen` bằng Demucs htdemucs.
-- Trích âm thanh từ video mà không tách nguồn.
-- Xuất WAV, MP3 192 kbps hoặc FLAC.
-- Nghe thử bản gốc và kết quả, sóng âm, nhật ký, dừng tác vụ.
-- File lỗi không chặn cả hàng đợi. Tự tạo thư mục có số hậu tố khi trùng tên.
-- File đầu vào không bị sửa. Kết quả chưa hoàn tất bị xóa khi dừng hoặc lỗi.
+1. Tải ZIP ở nhánh music-cleaner-app và giải nén vào thư mục có quyền ghi.
+2. Mở **run_windows.bat**. Lần đầu chương trình tự chạy bộ cài nếu thiếu thư viện.
+3. Bộ cài tìm Python 3.11 x64; nếu chưa có, thử cài cho người dùng hiện tại bằng winget.
+4. Bộ cài kiểm tra driver NVIDIA, chọn PyTorch CUDA 12.1 hoặc CPU và thử GPU thực tế.
+5. Chọn file → chức năng → thư mục xuất → Bắt đầu. Giữ thiết bị **Tự động**.
 
-## Cài đặt và chạy trên Windows
+Có thể mở install_windows.bat riêng để cài lại thư viện hoặc sửa môi trường.
+Nếu winget không có hoặc bị quản trị viên chặn, cài Python 3.11 64-bit từ python.org rồi chạy lại.
+Không cần cài FFmpeg riêng. Cần Internet cho bộ cài và lần đầu tải mô hình AI.
+Sau khi thư viện và mô hình đã có trên máy, xử lý được offline; không tải media lên dịch vụ.
 
-1. Cài **Python 3.11 64-bit** từ https://www.python.org/downloads/ (bao gồm Python Launcher).
-2. Giải nén bộ mã vào thư mục có quyền ghi; không chạy bên trong ZIP.
-3. Mở `install_windows.bat`. Cài CPU mặc định, tải vài GB thư viện; cần Internet.
-4. Mở `run_windows.bat`.
-5. Chọn nhiều file → chức năng → định dạng → thư mục xuất → Bắt đầu.
-6. Chọn hàng trong bảng để nghe file gốc hoặc kết quả; bấm Mở thư mục để xem file.
+## Tự nhận diện cấu hình
 
-FFmpeg đi kèm gói imageio-ffmpeg; không cần cài riêng.
-Lần chạy AI đầu tiên cần tải mô hình từ máy chủ Demucs (dl.fbaipublicfiles.com).
-Sau khi mô hình đã lưu cache, xử lý được offline trên chính máy đó.
-Cache mặc định của PyTorch thường ở `%USERPROFILE%\.cache\torch\hub\checkpoints`.
-Ứng dụng không tải video/âm thanh của bạn lên dịch vụ bên ngoài.
+- Đọc hệ điều hành, kiến trúc, số luồng CPU, tổng RAM và RAM còn trống.
+- Chỉ dùng CUDA khi PyTorch cấp phát và tính toán được trên GPU, VRAM ít nhất 2 GB.
+- AMD/Intel hoặc NVIDIA không tương thích dùng CPU.
+- GPU thiếu bộ nhớ/lỗi CUDA hoặc MPS khi tách sẽ thử lại đoạn đó trên CPU.
+- Chọn đoạn AI nội bộ 4 hoặc 7 giây và chia file dài thành phần 30/60/90 giây theo RAM trống.
+- Chạy hàng đợi tuần tự; giới hạn luồng tính toán tối đa 8.
+- Kiểm tra dung lượng ổ đĩa trước bước AI; báo lỗi thay vì giữ kết quả chưa hoàn tất.
+- Thông tin lựa chọn hiện trong nhật ký. system_report.json ghi cấu hình lúc cài, không chứa mật khẩu.
 
-## GPU NVIDIA (tùy chọn)
+Nếu đã cài bản CPU trước đây và muốn tự phát hiện NVIDIA lại, chạy install_windows.bat.
+Khi chép ứng dụng sang máy khác, không chép .venv; chạy run_windows.bat để cài theo máy mới.
+PowerShell ExecutionPolicy Bypass chỉ áp dụng cho tiến trình bộ cài; không đổi chính sách hệ thống.
 
-Bộ cài mặc định dùng CPU. Để dùng NVIDIA với driver phù hợp, trong thư mục ứng dụng chạy:
+## Nền tảng hỗ trợ
 
-```bat
-.venv\Scripts\python.exe -m pip install --force-reinstall torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
-```
+Windows 10/11 x64 là mục tiêu chính, có kiểm tra CI. Cần ổ đĩa đủ chỗ cho thư viện và WAV tạm.
+Khuyên dùng RAM từ 4 GB cho CPU; dưới mức này có thể không đủ bộ nhớ cho mô hình.
+Không bảo đảm chạy trên mọi máy: Windows 32-bit, Windows cũ và Windows ARM native chưa hỗ trợ.
+Máy không có quyền cài phần mềm, mạng bị chặn hoặc quá thiếu bộ nhớ cần xử lý điều kiện đó trước.
 
-Sau đó chọn GPU trong ứng dụng. Nếu không có CUDA phù hợp, chọn CPU.
-Không chọn GPU cho card AMD/Intel bằng bản này.
+Linux x64 và macOS Apple Silicon có script bổ sung: cài Python 3.11 rồi chạy
+`sh install_unix.sh`, sau đó `.venv/bin/python app.py`.
+Hai nền tảng này chưa có bộ cài tự cài Python; Mac Intel/ARM Linux chưa được hỗ trợ bởi bộ phiên bản ghim.
+Apple GPU được thử qua MPS, nhưng Demucs có thể cần quay về CPU.
 
-## Chất lượng và giới hạn
+## Kết quả và chất lượng
 
-Demucs là mô hình tách nguồn âm nhạc (vocals / accompaniment), không bảo đảm lời thoại sạch tuyệt đối.
-Giọng hát và giọng nói đều có thể vào nhánh giọng. Hiệu ứng, tiếng vang và nhạc có thể còn sót.
-Bản này **không tự nhận diện các đoạn có nhạc và không giữ nguyên từng đoạn không có nhạc**
-như lời mô tả trong ảnh; nó tách toàn bộ file. Không tô vùng xanh/đỏ giả.
-Sóng âm hiển thị file vừa xử lý, không phải kết quả nhận diện nhạc của file đang chọn.
-Tiến độ theo giai đoạn và số file, không phải phần trăm suy luận AI chính xác.
-Xử lý tuần tự để hạn chế bộ nhớ; CPU có thể chậm hơn thời lượng file.
-Demucs vẫn nạp toàn bộ âm thanh; file nhiều giờ có thể cần RAM lớn.
-Nên có khoảng 8 GB RAM trở lên và nhiều dung lượng trống cho WAV tạm.
-Chế độ xuất WAV/FLAC giữ dạng lossless sau giải mã; không cải thiện chất lượng nguồn.
-Video không có track âm thanh hoặc file hỏng sẽ có lỗi trong nhật ký.
-Không xuất lại video đã thay giọng trong bản này.
+Xuất WAV, MP3 192 kbps hoặc FLAC. Tách AI xuất giong và nhac_nen; trích âm thanh xuất am_thanh.
+Mỗi file có thư mục riêng, thêm hậu tố khi tên trùng; file lỗi không chặn hàng đợi.
+Có nghe thử bản gốc/kết quả, sóng âm, nhật ký và nút dừng.
 
-## Kiểm thử phát triển
+Demucs tách nguồn vocals/accompaniment, không bảo đảm lời thoại sạch tuyệt đối.
+Bản này tách toàn bộ file, chưa tự nhận diện từng đoạn có nhạc theo hình tham khảo.
+Việc chia file để tiết kiệm RAM có thể tạo khác biệt tại ranh giới các phần.
+Sóng âm là của file vừa xử lý; tiến độ theo giai đoạn, không phải phần trăm suy luận chính xác.
+File nhiều giờ vẫn cần nhiều dung lượng đĩa; WAV PCM16 tạm có giới hạn kích thước RIFF khoảng 4 GB.
+Không xuất lại video đã thay giọng. Bản nguồn dùng Python, chưa phải EXE độc lập.
 
-```sh
-python -m unittest discover -s tests -v
-```
+## Kiểm thử
 
-Cần cài imageio-ffmpeg để chạy kiểm thử tích hợp FFmpeg.
-Giao diện có thể kiểm tra bằng QT_QPA_PLATFORM=offscreen trên Linux.
-Bản nguồn chưa phải EXE độc lập. Bộ thư viện được ghim để tránh torchaudio mới chuyển sang TorchCodec.
+`python -m unittest discover -s tests -v`
 
+Windows CI kiểm tra bộ cài thật, Demucs CLI, xử lý FFmpeg, chọn cấu hình, fallback và GUI offscreen.
+Mô hình giả dùng trong kiểm thử điều phối; không thay thế việc kiểm chứng chất lượng trên bản thu thật.

@@ -6,6 +6,9 @@ import sys
 import tempfile
 import threading
 import wave
+import shutil
+import math
+from hardware import detect, summary
 from array import array
 
 SUPPORTED = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma",
@@ -17,14 +20,14 @@ def ffmpeg():
     import imageio_ffmpeg
     return imageio_ffmpeg.get_ffmpeg_exe()
 
-def command(args, cancel, log=lambda message: None):
+def command(args, cancel, log=lambda message: None, env=None):
     """Drain child output to disk to avoid pipe deadlocks and permit cancellation."""
     if cancel.is_set():
         raise Cancelled()
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     with tempfile.TemporaryFile() as output:
         process = subprocess.Popen([str(a) for a in args], stdout=output,
-                                   stderr=subprocess.STDOUT, creationflags=flags)
+                                   stderr=subprocess.STDOUT, creationflags=flags, env=env)
         try:
             while process.poll() is None:
                 if cancel.wait(0.15):
@@ -75,6 +78,67 @@ def read_waveform(source, cancel, log, bins=900):
                 peaks.append(max(abs(n) for n in samples) / 32768)
         return peaks, duration
 
+def recoverable_device_error(error):
+    text = str(error).lower()
+    return any(s in text for s in ("out of memory", "cuda error", "cuda is not",
+        "no nvidia", "not compiled with cuda", "mps backend", "mps device"))
+
+def separate_chunks(decoded, scratch, profile, cancel, phase, log):
+    """Bound Demucs' full-file loading to short pieces, then stream the stems."""
+    with wave.open(str(decoded), "rb") as source:
+        duration = source.getnframes() / source.getframerate()
+    if duration <= 0:
+        raise RuntimeError("File không có mẫu âm thanh.")
+    chunks = max(1, math.ceil(duration / profile.chunk_seconds))
+    input_path = scratch / "chunk.wav"
+    stems = scratch / "stems" / "htdemucs" / "chunk"
+    destinations = [scratch / "vocals.wav", scratch / "no_vocals.wav"]
+    writers = [wave.open(str(path), "wb") for path in destinations]
+    for writer in writers:
+        writer.setnchannels(2)
+        writer.setsampwidth(2)
+        writer.setframerate(44100)
+    env = os.environ.copy()
+    env["OMP_NUM_THREADS"] = str(profile.cpu_threads)
+    env["MKL_NUM_THREADS"] = str(profile.cpu_threads)
+    try:
+        for index in range(chunks):
+            phase(f"AI: đoạn {index+1}/{chunks} • {profile.device.upper()}",
+                  25 + int(55 * index / chunks))
+            command([ffmpeg(), "-nostdin", "-y", "-ss", str(index * profile.chunk_seconds),
+                     "-i", decoded, "-t", str(profile.chunk_seconds), "-c:a", "pcm_s16le",
+                     input_path], cancel, log)
+            def run_model():
+                command([sys.executable, "-m", "demucs", "-n", "htdemucs",
+                    "--two-stems", "vocals", "--device", profile.device,
+                    "--shifts", "1", "--segment", str(profile.segment), "-j", "1",
+                    "-o", scratch / "stems", input_path], cancel, log, env=env)
+            try:
+                run_model()
+            except RuntimeError as error:
+                if profile.device == "cpu" or not recoverable_device_error(error):
+                    raise
+                log("GPU không đủ bộ nhớ hoặc không tương thích. Thử lại đoạn này bằng CPU.")
+                profile.device, profile.segment = "cpu", 4
+                run_model()
+            for stem, writer in zip(("vocals", "no_vocals"), writers):
+                # Normalize to PCM16 for wave module on every platform.
+                pcm = scratch / (stem + "_part.wav")
+                command([ffmpeg(), "-nostdin", "-y", "-i", stems / (stem + ".wav"),
+                         "-c:a", "pcm_s16le", "-ac", "2", "-ar", "44100", pcm], cancel, log)
+                with wave.open(str(pcm), "rb") as part:
+                    while True:
+                        if cancel.is_set():
+                            raise Cancelled()
+                        frames = part.readframes(44100)
+                        if not frames:
+                            break
+                        writer.writeframesraw(frames)
+    finally:
+        for writer in writers:
+            writer.close()
+    return destinations
+
 def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log):
     source, root = Path(source), Path(root)
     if not source.is_file():
@@ -105,18 +169,18 @@ def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log):
                 convert(decoded, result, fmt, cancel, log)
                 outputs = [str(result)]
             else:
-                phase("AI tách giọng / nhạc (lần đầu tải mô hình)", 25)
-                # Demucs receives PCM WAV; decoding uses SoundFile with pinned torchaudio.
-                command([sys.executable, "-m", "demucs", "-n", "htdemucs",
-                         "--two-stems", "vocals", "--device", device,
-                         "--shifts", "1", "--segment", "7", "-j", "1",
-                         "-o", scratch / "stems", decoded], cancel, log)
+                profile = detect(device, probe_gpu=device != "cpu")
+                log(summary(profile))
+                # Decode/stems/export need disk, even when RAM usage is bounded.
+                needed = decoded.stat().st_size * 3 + 128 * 2**20
+                if shutil.disk_usage(scratch).free < needed or shutil.disk_usage(root).free < needed:
+                    raise RuntimeError("Không đủ dung lượng trống để tách file. Chọn ổ có nhiều chỗ trống hơn.")
+                separated = separate_chunks(decoded, scratch, profile, cancel, phase, log)
                 phase("Xuất giọng và nhạc nền", 85)
-                stems = scratch / "stems" / "htdemucs" / "input"
                 outputs = []
-                for stem, name in [("vocals", "giong"), ("no_vocals", "nhac_nen")]:
+                for stem_path, name in zip(separated, ("giong", "nhac_nen")):
                     result = folder / f"{name}.{fmt}"
-                    convert(stems / f"{stem}.wav", result, fmt, cancel, log)
+                    convert(stem_path, result, fmt, cancel, log)
                     outputs.append(str(result))
             if cancel.is_set():
                 raise Cancelled()
@@ -124,7 +188,6 @@ def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log):
             return outputs
     except BaseException:
         # This directory belongs to this job alone; remove partial results.
-        import shutil
         shutil.rmtree(folder, ignore_errors=True)
         raise
 
