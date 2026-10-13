@@ -172,7 +172,7 @@ def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log):
                 profile = detect(device, probe_gpu=device != "cpu")
                 log(summary(profile))
                 # Decode/stems/export need disk, even when RAM usage is bounded.
-                needed = decoded.stat().st_size * 3 + 128 * 2**20
+                needed = decoded.stat().st_size * 4 + 128 * 2**20
                 if shutil.disk_usage(scratch).free < needed or shutil.disk_usage(root).free < needed:
                     raise RuntimeError("Không đủ dung lượng trống để tách file. Chọn ổ có nhiều chỗ trống hơn.")
                 separated = separate_chunks(decoded, scratch, profile, cancel, phase, log)

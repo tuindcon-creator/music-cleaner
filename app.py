@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QUrl
 from PySide6.QtGui import QColor, QPainter, QPen, QDesktopServices
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFileDialog, QComboBox, QLineEdit, QTableWidget, QTableWidgetItem,
-    QHeaderView, QProgressBar, QPlainTextEdit, QMessageBox, QSlider)
+    QHeaderView, QProgressBar, QPlainTextEdit, QMessageBox, QSlider, QScrollArea)
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from engine import SUPPORTED, process_file, Cancelled
 from hardware import detect, summary, validate_platform
@@ -86,7 +86,13 @@ class Window(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Music Cleaner • Tách giọng & âm thanh")
-        self.resize(1180, 850)
+        screen = QApplication.primaryScreen()
+        if screen:
+            available = screen.availableGeometry()
+            self.resize(min(1180, int(available.width() * 0.95)),
+                        min(850, int(available.height() * 0.9)))
+        else:
+            self.resize(1000, 700)
         self.files, self.outputs, self.worker = [], {}, None
         self.player = QMediaPlayer(self)
         self.audio = QAudioOutput(self)
@@ -94,7 +100,10 @@ class Window(QMainWindow):
         self.player.setAudioOutput(self.audio)
         self.player.errorOccurred.connect(lambda *args: self.logs.appendPlainText(self.player.errorString()))
         base = QWidget()
-        self.setCentralWidget(base)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(base)
+        self.setCentralWidget(scroll)
         layout = QVBoxLayout(base)
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(12)
