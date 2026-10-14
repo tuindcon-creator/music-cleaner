@@ -67,7 +67,9 @@ def clean(source, target, strength=12, threads=2, model_path=None, model_factory
         overlap = rate // 2
         writer = StemJoiner(target, rate=48000, channels=channels)
         try:
-            with tempfile.TemporaryDirectory(prefix="speech-parts-") as scratch:
+            # Keep intermediates under the caller's job directory, so the parent
+            # can remove them even when this child is terminated for cancellation.
+            with tempfile.TemporaryDirectory(prefix="speech-parts-", dir=Path(target).parent) as scratch:
                 part = Path(scratch) / "part.wav"
                 for index, offset in enumerate(range(0, frames, step)):
                     start = max(0, offset - (overlap if index else 0))
