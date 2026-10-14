@@ -115,6 +115,15 @@ class ProcessingTests(unittest.TestCase):
                        self.cancel, messages.append)
         self.assertIn("Giọng nói tiếng Việt", "".join(messages))
 
+    def test_final_child_progress_is_read_even_for_short_task(self):
+        progress_path = self.root / "progress.json"
+        updates = []
+        code = "import json,pathlib,sys; pathlib.Path(sys.argv[1]).write_text(json.dumps({'stage':'filtering','fraction':1,'message':'done'}),encoding='utf-8')"
+        engine.command([sys.executable, "-c", code, progress_path], self.cancel,
+                       progress_path=progress_path, on_progress=updates.append)
+        self.assertEqual(updates[-1]["fraction"], 1)
+        self.assertEqual(len(updates), 1)
+
     def test_multi_chunk_merge_and_gpu_failure_retries_on_cpu(self):
         real_command = engine.command
         devices = []

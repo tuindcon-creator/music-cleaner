@@ -157,3 +157,13 @@ class SpeechTests(unittest.TestCase):
                     threading.Event(), lambda *_: None, lambda *_: None)
         self.assertFalse((self.root / "giong_loc.wav").exists())
         self.assertFalse(list(self.root.glob("*.pending.*")))
+
+    def test_report_does_not_claim_success_if_requested_file_is_missing(self):
+        voice = self.root / "giong.wav"
+        sf.write(voice, np.zeros((100, 2), np.float32), 44100)
+        outputs = engine.ProcessingResult([str(voice)])
+        engine.write_report(self.root, outputs, "separate", "wav", 12)
+        self.assertEqual(outputs.state, "partial")
+        self.assertIn("giong_loc.wav", outputs.warning)
+        report = json.loads((self.root / "ket_qua.json").read_text(encoding="utf-8"))
+        self.assertEqual(report["missing"], ["nhac_nen.wav", "giong_loc.wav"])

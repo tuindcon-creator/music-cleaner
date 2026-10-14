@@ -33,8 +33,12 @@ def write_report(folder, outputs, mode, fmt, cleanup):
                 [f"giong_goc.{fmt}", f"giong_loc.{fmt}"] if mode == "speech" else
                 [f"giong.{fmt}", f"nhac_nen.{fmt}"] + ([f"giong_loc.{fmt}"] if cleanup else []))
     present = [Path(p).name for p in outputs if Path(p).is_file()]
+    missing = [name for name in expected if name not in present]
+    if missing and outputs.state == "complete":
+        outputs.state = "partial"
+        outputs.warning = "Thiếu file kết quả: " + ", ".join(missing)
     report = dict(version="1.3", state=outputs.state, requested=expected,
-                  created=present, missing=[name for name in expected if name not in present],
+                  created=present, missing=missing,
                   reason=outputs.warning)
     (folder / "ket_qua.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return outputs
@@ -107,7 +111,8 @@ def command(args, cancel, log=lambda message: None, env=None, progress_path=None
                                    stderr=subprocess.STDOUT, creationflags=flags, env=runtime_env)
         try:
             last_progress = None
-            while process.poll() is None:
+            def read_progress():
+                nonlocal last_progress
                 if progress_path is not None and on_progress is not None:
                     try:
                         progress = json.loads(Path(progress_path).read_text(encoding="utf-8"))
@@ -116,6 +121,8 @@ def command(args, cancel, log=lambda message: None, env=None, progress_path=None
                             last_progress = progress
                     except (OSError, ValueError):
                         pass
+            while process.poll() is None:
+                read_progress()
                 if cancel.wait(0.15):
                     process.terminate()
                     try:
@@ -124,6 +131,7 @@ def command(args, cancel, log=lambda message: None, env=None, progress_path=None
                         process.kill()
                         process.wait()
                     raise Cancelled()
+            read_progress()  # Include the last update even for very short files.
             output.seek(0)
             message = output.read().decode("utf-8", errors="replace")
             if process.returncode:
@@ -344,7 +352,7 @@ def clean_voice(source, scratch, folder, fmt, strength, cancel, phase, log):
     filtered = scratch / "speech_filtered.wav"
     progress_path = scratch / "speech_progress.json"
     def progress(p):
-        fraction = max(0., min(1., float(p.get("fraction", 0))))
+        fraction = max(0., min(1., float(p.get("fraction", 0)))) if p.get("stage") == "filtering" else 0.
         phase(p.get("message", "Lọc lời thoại trên CPU"), 86 + int(10 * fraction))
     command([sys.executable, Path(__file__).with_name("speech_cleanup.py"),
              "--input", source, "--output", filtered, "--strength", strength,
