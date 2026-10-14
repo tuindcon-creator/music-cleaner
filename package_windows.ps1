@@ -12,5 +12,6 @@ foreach ($file in @("run_windows.bat", "install_windows.bat", "setup_windows.ps1
                     "requirements.txt", "README.md", "VALIDATION.md")) {
     Copy-Item $file $package
 }
-Compress-Archive -Path $package -DestinationPath "$destination\MusicCleaner-Windows.zip" -Force
+& ".venv\Scripts\python.exe" -c "import pathlib,zipfile; p=pathlib.Path('dist/MusicCleaner'); z=zipfile.ZipFile('dist/MusicCleaner-Windows.zip','w',zipfile.ZIP_DEFLATED); [z.write(f,f.relative_to(p.parent).as_posix()) for f in sorted(p.rglob('*')) if f.is_file()]; z.close()"
+if ($LASTEXITCODE -ne 0) { throw "ZIP packaging failed." }
 Get-FileHash "$destination\MusicCleaner-Windows.zip" -Algorithm SHA256 | Format-List
