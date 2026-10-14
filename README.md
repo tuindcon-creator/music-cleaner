@@ -1,11 +1,11 @@
-# Music Cleaner — tự cấu hình máy
+# Music Cleaner 1.1 — Windows build
 
 Ứng dụng tách giọng/nhạc nền, trích âm thanh từ video và xử lý hàng loạt, giao diện tiếng Việt.
 
 ## Chạy trên Windows
 
 1. Tải ZIP ở nhánh music-cleaner-app và giải nén vào thư mục có quyền ghi.
-2. Mở **run_windows.bat**. Lần đầu chương trình tự chạy bộ cài nếu thiếu thư viện.
+2. Bản build có **MusicCleaner.exe**: mở file này sau khi giải nén toàn bộ gói. Nếu dùng ZIP mã nguồn, mở **run_windows.bat**. Lần đầu chương trình tự chạy bộ cài nếu thiếu thư viện.
 3. Bộ cài tìm Python 3.11 x64; nếu chưa có, thử cài cho người dùng hiện tại bằng winget.
 4. Bộ cài kiểm tra driver NVIDIA, chọn PyTorch CUDA 12.1 hoặc CPU và thử GPU thực tế.
 5. Chọn file → chức năng → thư mục xuất → Bắt đầu. Giữ thiết bị **Tự động**.
@@ -15,6 +15,23 @@ Nếu winget không có hoặc bị quản trị viên chặn, cài Python 3.11 
 Không cần cài FFmpeg riêng. Cần Internet cho bộ cài và lần đầu tải mô hình AI.
 AI đọc trực tiếp WAV đã giải mã, không gọi ffprobe trên PATH của Windows.
 Sau khi thư viện và mô hình đã có trên máy, xử lý được offline; không tải media lên dịch vụ.
+
+## Bản 1.1 có gì mới
+
+- Launcher Windows biên dịch, đi kèm ZIP; launcher mở môi trường Python của ứng dụng, không phải EXE độc lập chứa toàn bộ AI.
+- Kiểm tra GPU trong tiến trình con, cache kết quả 5 phút; giao diện không phải giữ PyTorch để kiểm tra GPU.
+- Nâng cấp thư viện mà giữ bản PyTorch/driver đang hoạt động, hạn chế tải lại các gói lớn.
+- Chức năng **Lọc lời thoại đã tách** chạy trực tiếp trên giong.wav, không cần tách nguồn lại.
+- Tùy chọn giảm nhạc sót **Tắt / Nhẹ / Mạnh hơn**. Mặc định tắt khi tách video.
+- Giữ bản trước lọc; nếu lọc bổ sung lỗi hoặc bị dừng sau khi tách xong, vẫn giữ kết quả tách đã hoàn tất.
+- Mô hình lời thoại DPDFNet 48 kHz qua sherpa-onnx, chỉ CPU 2 luồng, chia phần 30 giây có chồng lấn để hạn chế RAM.
+- Cache mô hình lời thoại ở ~/.cache/music-cleaner/models, tải từ nguồn GitHub chính thức và xác minh SHA-256. Trọng số khoảng 10 MB; thư viện được cài riêng lần đầu.
+
+Nếu giọng đã tách vẫn còn nhạc: chọn giong.wav → Tùy chọn → **Lọc lời thoại đã tách** → mức **Nhẹ** → **Thử 30 giây**.
+Nghe đối chiếu giong_goc và giong_loc trước khi chạy hàng loạt. Mạnh hơn có thể làm giọng đổi màu.
+Khi tách video bình thường, chọn Ưu tiên giọng và chỉ bật giảm nhạc sót nếu đã nghe thử phù hợp.
+Không cam kết hết nhạc tuyệt đối và không biến đổi giọng; các mô hình vẫn có thể nhầm nhạc với giọng.
+Không tải file âm thanh/video của bạn lên dịch vụ; Internet chỉ dùng để tải thư viện/mô hình.
 
 ## Giao diện mới
 
@@ -49,7 +66,7 @@ Kết quả thử xuất tối đa 30 giây; file ngắn hơn sẽ có thời l�
 Mẫu thử không đổi sóng âm/thông tin thời lượng toàn file và không thay thế kết quả cả file.
 Chọn giong.wav (thử 30s) trong khung nghe thử để đối chiếu với bản gốc.
 
-Không thêm cắt tần số, EQ, noise gate hoặc lọc phổ mạnh. AI vẫn có thể làm đổi giọng hoặc còn nhạc;
+Các chế độ tách nguồn không thêm EQ/noise gate; bộ lọc lời thoại bổ sung là lựa chọn riêng, mặc định tắt. AI vẫn có thể làm đổi giọng hoặc còn nhạc;
 không thể bảo đảm tuyệt đối hết nhạc và giữ nguyên giọng. Tên Ưu tiên giọng thể hiện cách chọn mô hình, không phải cam kết không biến dạng.
 Ghép đoạn bằng chồng lấn/crossfade có căn thời gian. Trung gian giữ WAV float, tránh thay đổi mức âm mỗi đoạn.
 Nếu có mẫu vượt biên PCM, giảm một mức âm cố định cho toàn stem trước xuất; không dùng limiter/compressor.
@@ -96,7 +113,7 @@ Bản này tách toàn bộ file, chưa tự nhận diện từng đoạn có nh
 Chồng lấn/crossfade giảm chuyển tiếp đột ngột ở ranh giới phần; vẫn có thể còn khác biệt do dự đoán AI.
 Sóng âm là của file vừa xử lý; tiến độ theo giai đoạn, không phải phần trăm suy luận chính xác.
 File nhiều giờ vẫn cần nhiều dung lượng đĩa; WAV PCM16 tạm có giới hạn kích thước RIFF khoảng 4 GB.
-Không xuất lại video đã thay giọng. Bản nguồn dùng Python, chưa phải EXE độc lập.
+Không xuất lại video đã thay giọng. Bản build có launcher EXE; bộ AI vẫn chạy trong môi trường Python được tự cài.
 
 ## Kiểm thử
 

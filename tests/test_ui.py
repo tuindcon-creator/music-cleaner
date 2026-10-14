@@ -96,6 +96,17 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(window.table.item(0, 1).text(), "Chờ xử lý")
         self.assertAlmostEqual(window.wave_cache[self.files[1]][1], 2, places=2)
         self.assertIn("Thử 30s", window.progress.format())
+    def test_speech_mode_exposes_safe_comparison_outputs(self):
+        window = self.window
+        self.assertEqual(window.cleanup.currentData(), 0)
+        window.mode.setCurrentIndex(2)
+        self.assertEqual(window.cleanup.currentData(), 12)
+        self.assertFalse(window.quality.isEnabled())
+        self.assertFalse(window.device.isEnabled())
+        self.assertIn("giong_goc", window.output_names.text())
+        self.assertIn("giong_loc", window.output_names.text())
+        window.mode.setCurrentIndex(1)
+        self.assertFalse(window.cleanup.isEnabled())
 
 if __name__ == "__main__":
     unittest.main()

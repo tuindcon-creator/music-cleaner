@@ -6,6 +6,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from hardware import choose_profile, validate_platform
 from setup_runtime import cuda_candidate
+import hardware
 
 class HardwareTests(unittest.TestCase):
     def profile(self, **kwargs):
@@ -45,6 +46,15 @@ class HardwareTests(unittest.TestCase):
                 self.assertTrue(cuda_candidate())
             with patch("setup_runtime.subprocess.run", side_effect=FileNotFoundError):
                 self.assertFalse(cuda_candidate())
+    def test_gpu_probe_runs_in_child_and_is_cached(self):
+        with patch.object(hardware, "_GPU_CACHE", None):
+            with patch.object(hardware, "_GPU_CACHE_TIME", 0):
+                result = subprocess.CompletedProcess([], 0, '{"gpu":"Test NVIDIA","vram":12,"cuda":true,"mps":false}', "")
+                with patch("hardware.subprocess.run", return_value=result) as child:
+                    self.assertEqual(hardware.detect().device, "cuda")
+                    self.assertEqual(hardware.detect().device, "cuda")
+                    child.assert_called_once()
+                    self.assertIn("--gpu-probe", child.call_args.args[0])
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,6 +4,48 @@ import json
 import os
 import platform
 import struct
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+_GPU_CACHE = None
+_GPU_CACHE_TIME = 0.
+
+def gpu_capabilities():
+    info = dict(gpu="", vram=0., cuda=False, mps=False)
+    try:
+        import torch
+        if torch.cuda.is_available():
+            info["gpu"] = torch.cuda.get_device_name(0)
+            info["vram"] = torch.cuda.get_device_properties(0).total_memory / 2**30
+            value = torch.ones(1, device="cuda") + 1
+            info["cuda"] = value.item() == 2
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            value = torch.ones(1, device="mps") + 1
+            info["mps"] = value.item() == 2
+            info["gpu"] = "Apple GPU" if info["mps"] else ""
+    except Exception:
+        info["cuda"] = info["mps"] = False
+    return info
+
+def probe_gpu_subprocess():
+    global _GPU_CACHE, _GPU_CACHE_TIME
+    if _GPU_CACHE is not None and time.monotonic() - _GPU_CACHE_TIME < 300:
+        return _GPU_CACHE.copy()
+    info = dict(gpu="", vram=0., cuda=False, mps=False)
+    try:
+        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--gpu-probe"],
+            capture_output=True, text=True, timeout=30, creationflags=flags)
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            info.update(gpu=str(data.get("gpu", "")), vram=float(data.get("vram", 0)),
+                        cuda=bool(data.get("cuda")), mps=bool(data.get("mps")))
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        pass
+    _GPU_CACHE, _GPU_CACHE_TIME = info, time.monotonic()
+    return info.copy()
 
 @dataclass
 class Profile:
@@ -40,24 +82,9 @@ def detect(requested="auto", probe_gpu=True):
     import psutil
     memory = psutil.virtual_memory()
     gpu, vram, cuda, mps = "", 0, False, False
-    if probe_gpu:
-        try:
-            import torch
-            if torch.cuda.is_available():
-                gpu = torch.cuda.get_device_name(0)
-                vram = torch.cuda.get_device_properties(0).total_memory / 2**30
-                # Some drivers/architectures report availability but fail to allocate.
-                value = torch.ones(1, device="cuda") + 1
-                cuda = value.item() == 2
-                del value
-                torch.cuda.empty_cache()
-            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-                value = torch.ones(1, device="mps") + 1
-                mps = value.item() == 2
-                gpu = "Apple GPU" if mps else ""
-                del value
-        except Exception:
-            cuda = mps = False
+    if probe_gpu and requested != "cpu":
+        info = probe_gpu_subprocess()
+        gpu, vram, cuda, mps = info["gpu"], info["vram"], info["cuda"], info["mps"]
     return choose_profile(platform.system(), platform.machine(), os.cpu_count() or 1,
                           memory.total / 2**30, memory.available / 2**30,
                           gpu, vram, cuda, mps, requested)
@@ -74,5 +101,8 @@ def validate_platform():
         raise RuntimeError("Bộ cài Windows hiện hỗ trợ x64; ARM cần môi trường x64 giả lập.")
 
 if __name__ == "__main__":
-    validate_platform()
-    print(json.dumps(asdict(detect()), ensure_ascii=False, indent=2))
+    if "--gpu-probe" in sys.argv:
+        print(json.dumps(gpu_capabilities()))
+    else:
+        validate_platform()
+        print(json.dumps(asdict(detect()), ensure_ascii=False, indent=2))

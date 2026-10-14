@@ -194,7 +194,9 @@ def separate_chunks(decoded, scratch, profile, cancel, phase, log, settings=None
     return destinations
 
 def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log,
-                 quality="balanced", preview_seconds=None, preview_start=0):
+                 quality="balanced", preview_seconds=None, preview_start=0, cleanup=0):
+    if cleanup not in (0, 12, 18):
+        raise ValueError("Mức lọc lời thoại không hợp lệ.")
     source, root = Path(source), Path(root).expanduser().resolve()
     if not source.is_file():
         raise FileNotFoundError(f"Không tìm thấy: {source}")
@@ -202,6 +204,7 @@ def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log,
     log(f"Thư mục kết quả: {folder}")
     try:
         with tempfile.TemporaryDirectory(prefix="music-cleaner-") as scratch:
+            final_status = "Hoàn tất"
             scratch = Path(scratch)
             phase("Trích xuất âm thanh", 5)
             decoded = scratch / "input.wav"
@@ -217,6 +220,18 @@ def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log,
                 result = folder / f"am_thanh.{fmt}"
                 convert(decoded, result, fmt, cancel, log)
                 outputs = [str(result)]
+            elif mode == "speech":
+                from audio_join import peak_gain
+                result = folder / f"giong_goc.{fmt}"
+                convert(decoded, result, fmt, cancel, log)
+                outputs = [str(result)]
+                try:
+                    outputs.append(clean_voice(decoded, scratch, folder, fmt, cleanup or 12, cancel, phase, log))
+                except Cancelled:
+                    (folder / f"giong_loc.{fmt}").unlink(missing_ok=True)
+                    log("Đã dừng lọc bổ sung; giữ bản giọng trước lọc.")
+                    phase("Giữ bản trước lọc; đã dừng", 100)
+                    return outputs
             else:
                 profile = detect(device, probe_gpu=device != "cpu")
                 profile, settings = configure(profile, quality)
@@ -240,12 +255,38 @@ def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log,
                         log(f"Giảm mức âm toàn file {name} để tránh clipping (gain={gain:.3f}).")
                     convert(stem_path, result, fmt, cancel, log, gain=gain)
                     outputs.append(str(result))
+                if cleanup:
+                    try:
+                        outputs.append(clean_voice(separated[0], scratch, folder, fmt,
+                                                   cleanup, cancel, phase, log))
+                    except Cancelled:
+                        (folder / f"giong_loc.{fmt}").unlink(missing_ok=True)
+                        log("Đã dừng lọc bổ sung; giữ kết quả tách giọng và nhạc nền.")
+                        phase("Đã tách; đã dừng lọc", 100)
+                        return outputs
+                    except Exception as error:
+                        # Separation is already complete. Preserve usable unfiltered
+                        # results if optional model download/denoising fails.
+                        (folder / f"giong_loc.{fmt}").unlink(missing_ok=True)
+                        log(f"Lọc bổ sung chưa hoàn tất: {error}. Đã giữ giọng và nhạc nền trước lọc.")
+                        final_status = "Đã tách; lọc bổ sung lỗi"
             if cancel.is_set():
                 raise Cancelled()
-            phase("Hoàn tất", 100)
+            phase(final_status, 100)
             return outputs
     except BaseException:
         # This directory belongs to this job alone; remove partial results.
         shutil.rmtree(folder, ignore_errors=True)
         raise
+
+def clean_voice(source, scratch, folder, fmt, strength, cancel, phase, log):
+    from audio_join import peak_gain
+    phase("Lọc lời thoại bổ sung trên CPU (lần đầu tải mô hình)", 90)
+    filtered = scratch / "speech_filtered.wav"
+    command([sys.executable, Path(__file__).with_name("speech_cleanup.py"),
+             "--input", source, "--output", filtered, "--strength", strength,
+             "--threads", "2"], cancel, log)
+    result = folder / f"giong_loc.{fmt}"
+    convert(filtered, result, fmt, cancel, log, gain=peak_gain(filtered, cancel, Cancelled))
+    return str(result)
 

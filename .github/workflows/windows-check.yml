@@ -14,7 +14,18 @@ jobs:
         run: .\setup_windows.ps1
       - run: .venv\Scripts\python.exe demucs_runner.py --help
       - run: .venv\Scripts\python.exe -m unittest discover -s tests -v
+      - name: Real speech model smoke test
+        run: .venv\Scripts\python.exe tests/smoke_speech_model.py
       - name: GUI smoke check
         env:
           QT_QPA_PLATFORM: offscreen
         run: .venv\Scripts\python.exe -c "from PySide6.QtWidgets import QApplication; from app import Window; a=QApplication([]); w=Window(); assert w.device.currentData()=='auto'; w.show(); a.processEvents(); w.close()"
+      - name: Build Windows package
+        shell: powershell
+        run: .\package_windows.ps1
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicCleaner-Windows
+          path: dist/MusicCleaner-Windows.zip
+          if-no-files-found: error

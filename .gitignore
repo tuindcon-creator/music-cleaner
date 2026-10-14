@@ -1,6 +1,7 @@
 .venv/
 .venv-backup-*/
 system_report.json
+dist/
 __pycache__/
 *.pyc
 *.log

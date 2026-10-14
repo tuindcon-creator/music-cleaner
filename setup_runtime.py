@@ -30,6 +30,19 @@ def install_torch(cuda):
          "--no-deps", "torch==2.5.1", "torchaudio==2.5.1",
          "--index-url", "https://download.pytorch.org/whl/" + index])
 
+def installed_torch():
+    code = ("import torch,torchaudio,json; "
+            "ok=torch.__version__.startswith('2.5.1') and torchaudio.__version__.startswith('2.5.1'); "
+            "cuda=torch.cuda.is_available(); "
+            "cuda=cuda and (torch.ones(1,device='cuda')+1).item()==2; "
+            "print(json.dumps(dict(ready=ok,cuda=cuda,cuda_build=torch.version.cuda is not None)))")
+    try:
+        result = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
+                                capture_output=True, text=True, timeout=30)
+        return json.loads(result.stdout) if result.returncode == 0 else {}
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return {}
+
 def main():
     if sys.prefix == sys.base_prefix:
         raise RuntimeError("Please run the installer to create .venv first.")
@@ -38,10 +51,14 @@ def main():
     from hardware import validate_platform
     validate_platform()
     run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
-    cuda = cuda_candidate()
+    existing = installed_torch()
+    cuda = cuda_candidate() or existing.get("cuda", False)
     if platform.system() != "Darwin":
         try:
-            install_torch(cuda)
+            if existing.get("ready") and existing.get("cuda_build") == cuda and (not cuda or existing.get("cuda")):
+                print("Keeping the existing working PyTorch installation.", flush=True)
+            else:
+                install_torch(cuda)
         except subprocess.CalledProcessError:
             if not cuda:
                 raise
