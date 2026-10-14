@@ -1,5 +1,8 @@
 """Run the pinned Demucs CLI with direct PCM input, without ffprobe lookup."""
 from pathlib import Path
+import json
+import sys
+import traceback
 
 def load_track(track, audio_channels, samplerate):
     import soundfile as sf
@@ -14,13 +17,43 @@ def load_track(track, audio_channels, samplerate):
     audio = torch.from_numpy(samples.T.copy())
     return convert_audio(audio, rate, samplerate, audio_channels)
 
+def serve(reply, separate_module=None):
+    """Reuse the exact pinned CLI pipeline and one cached model in this child."""
+    if separate_module is None:
+        from demucs import separate as separate_module
+    original_loader = separate_module.get_model_from_args
+    cached = {}
+    def cached_loader(args):
+        key = (args.name, str(args.repo))
+        if key not in cached:
+            cached[key] = original_loader(args)
+        return cached[key]
+    separate_module.get_model_from_args = cached_loader
+    temporary = Path(reply).with_suffix(".tmp")
+    try:
+        for line in sys.stdin:
+            request = json.loads(line)
+            try:
+                separate_module.main(request["args"])
+                response = {"id": request["id"], "ok": True}
+            except (Exception, SystemExit):
+                response = {"id": request["id"], "ok": False,
+                            "error": traceback.format_exc()[-6000:]}
+            temporary.write_text(json.dumps(response), encoding="utf-8")
+            temporary.replace(reply)
+    finally:
+        separate_module.get_model_from_args = original_loader
+
+
 def main():
     from demucs import separate
-    # The CLI first tries bare 'ffprobe' on PATH and does not catch PermissionError.
-    # All inputs here have already been decoded by the app's bundled FFmpeg.
+    # WAV is decoded by the app. Do not invoke bare ffprobe on Windows PATH.
     separate.load_track = load_track
     separate.save_audio = save_float_audio
-    separate.main()
+    if len(sys.argv) == 3 and sys.argv[1] == "--worker":
+        serve(Path(sys.argv[2]), separate)
+    else:
+        separate.main()
 
 def save_float_audio(audio, path, samplerate=44100, **kwargs):
     import soundfile as sf

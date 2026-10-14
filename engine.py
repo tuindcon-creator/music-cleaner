@@ -10,6 +10,8 @@ import shutil
 import math
 import re
 import unicodedata
+import time
+from model_worker import ModelWorker
 from hardware import detect, summary
 from processing_modes import configure
 from array import array
@@ -162,6 +164,9 @@ def separate_chunks(decoded, scratch, profile, cancel, phase, log, settings=None
     env["MKL_NUM_THREADS"] = str(profile.cpu_threads)
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
+    worker = ModelWorker(scratch, cancel, log, env)
+    log("AI dùng lại mô hình giữa các đoạn; giữ nguyên chế độ tách.")
+    began = time.monotonic()
     try:
         for index in range(chunks):
             phase(f"AI: đoạn {index+1}/{chunks} • {profile.device.upper()}",
@@ -172,11 +177,11 @@ def separate_chunks(decoded, scratch, profile, cancel, phase, log, settings=None
                      "-i", decoded, "-t", str(length), "-c:a", "pcm_s16le",
                      input_path], cancel, log)
             def run_model():
-                command([sys.executable, Path(__file__).with_name("demucs_runner.py"), "-n", settings.model,
+                worker.run(["-n", settings.model,
                     "--two-stems", "vocals", "--device", profile.device,
                     "--shifts", str(settings.shifts), "--overlap", str(settings.overlap),
                     "--segment", str(profile.segment), "-j", "1",
-                    "-o", scratch / "stems", input_path], cancel, log, env=env)
+                    "-o", scratch / "stems", input_path])
             try:
                 run_model()
             except RuntimeError as error:
@@ -184,12 +189,19 @@ def separate_chunks(decoded, scratch, profile, cancel, phase, log, settings=None
                     raise
                 log("GPU không đủ bộ nhớ hoặc không tương thích. Thử lại đoạn này bằng CPU.")
                 profile.device, profile.segment = "cpu", 4
+                worker.restart()
                 run_model()
             for stem, writer in zip(("vocals", "no_vocals"), writers):
                 writer.append(stems / (stem + ".wav"), overlap_frames, cancel, Cancelled)
+            elapsed = time.monotonic() - began
+            done_seconds = min(duration, (index + 1) * profile.chunk_seconds)
+            speed = done_seconds / max(elapsed, .001)
+            remaining = (duration - done_seconds) / max(speed, .001)
+            log(f"AI: {index+1}/{chunks} • {profile.device.upper()} • {speed:.2f}x thời lượng • còn khoảng {math.ceil(remaining/60)} phút")
         for writer in writers:
             writer.finish()
     finally:
+        worker.close()
         for writer in writers:
             writer.close()
     return destinations

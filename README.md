@@ -1,4 +1,4 @@
-# Music Cleaner 1.1 — Windows build
+# Music Cleaner 1.2 — Windows build
 
 Ứng dụng tách giọng/nhạc nền, trích âm thanh từ video và xử lý hàng loạt, giao diện tiếng Việt.
 
@@ -15,6 +15,16 @@ Nếu winget không có hoặc bị quản trị viên chặn, cài Python 3.11 
 Không cần cài FFmpeg riêng. Cần Internet cho bộ cài và lần đầu tải mô hình AI.
 AI đọc trực tiếp WAV đã giải mã, không gọi ffprobe trên PATH của Windows.
 Sau khi thư viện và mô hình đã có trên máy, xử lý được offline; không tải media lên dịch vụ.
+
+## Bản 1.2 tăng tốc
+
+- Một tiến trình AI cho mỗi file, dùng lại mô hình đã tải giữa các đoạn. Bản cũ khởi động Python và đọc lại trọng số cho từng đoạn.
+- Giữ nguyên mô hình, số lượt dịch chuyển, overlap, xuất float và ghép đoạn; không bật half precision hay thay bộ lọc để tăng tốc.
+- Tiến trình AI đóng sau mỗi file/hủy; không giữ RAM/GPU sau khi xử lý xong. Khi GPU lỗi, khởi động lại tiến trình sạch cho CPU.
+- Nhật ký báo tốc độ tính theo thời lượng và thời gian AI còn lại ước tính sau mỗi đoạn. Ước tính chưa gồm bước lọc lời thoại/xuất file.
+- Bước lọc lời thoại bổ sung vẫn chạy CPU 2 luồng. Khi bật bước này, GPU xong việc vẫn cần chờ CPU.
+- Với RTX 3060, bắt đầu bằng **Cân bằng + thiết bị Tự động** nếu ưu tiên tốc độ. **Lọc kỹ** dùng 4 mô hình và 2 lượt dịch chuyển nên vẫn lâu hơn; giữ nguyên lựa chọn nếu cần chất lượng đó.
+- Chưa có số đo tăng tốc trên RTX 3060 của bạn; mức cải thiện phụ thuộc thời lượng file, chế độ, CPU/GPU và bộ nhớ.
 
 ## Bản 1.1 có gì mới
 

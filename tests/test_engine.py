@@ -12,6 +12,17 @@ import engine
 from hardware import choose_profile
 
 
+class StubWorker:
+    def __init__(self, scratch, cancel, log, env=None):
+        self.cancel, self.log, self.env = cancel, log, env
+    def run(self, args):
+        engine.command([sys.executable, "demucs_runner.py", *args], self.cancel, self.log, self.env)
+    def restart(self):
+        pass
+    def close(self):
+        pass
+
+
 class ProcessingTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -23,6 +34,9 @@ class ProcessingTests(unittest.TestCase):
             audio.setframerate(44100)
             audio.writeframes(array("h", [1000, -1000] * 22050).tobytes())
         self.cancel = threading.Event()
+        self.worker_patch = patch.object(engine, "ModelWorker", StubWorker)
+        self.worker_patch.start()
+        self.addCleanup(self.worker_patch.stop)
 
     def tearDown(self):
         self.temp.cleanup()
