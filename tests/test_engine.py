@@ -131,5 +131,28 @@ class ProcessingTests(unittest.TestCase):
                 self.process(mode="separate")
         self.assertFalse(list((self.root / "out").iterdir()))
 
+    def test_thorough_mode_uses_finetuned_stem_directory(self):
+        real_command = engine.command
+        calls = []
+        profile = choose_profile("Windows", "AMD64", 4, 16, 10)
+        def stub(args, cancel, log=lambda *a: None, env=None):
+            if len(args) > 1 and str(args[1]).endswith("demucs_runner.py"):
+                import shutil
+                calls.append(args)
+                model = args[args.index("-n") + 1]
+                dest = Path(args[args.index("-o") + 1]) / model / "chunk"
+                dest.mkdir(parents=True, exist_ok=True)
+                for name in ("vocals", "no_vocals"):
+                    shutil.copyfile(args[-1], dest / (name + ".wav"))
+            else:
+                real_command(args, cancel, log, env)
+        with patch.object(engine, "detect", return_value=profile):
+            with patch.object(engine, "command", side_effect=stub):
+                outputs = engine.process_file(self.source, self.root / "out", "separate", "wav", "cpu",
+                    self.cancel, lambda *_: None, lambda *_: None, lambda *_: None, quality="thorough")
+        self.assertEqual(calls[0][calls[0].index("-n") + 1], "htdemucs_ft")
+        self.assertEqual(calls[0][calls[0].index("--shifts") + 1], "2")
+        self.assertTrue(all(Path(path).is_file() for path in outputs))
+
 if __name__ == "__main__":
     unittest.main()

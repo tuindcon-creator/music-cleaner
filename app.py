@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from engine import SUPPORTED, process_file, Cancelled, read_waveform
 from hardware import detect, summary, validate_platform
+from processing_modes import MODES
 
 def clock(seconds):
     seconds = max(0, int(seconds))
@@ -54,10 +55,13 @@ class BatchWorker(QThread):
     log = Signal(str)
     error = Signal(int, str)
     completed = Signal(int, int, bool)
-    def __init__(self, files, root, mode, fmt, device):
+    def __init__(self, files, root, mode, fmt, device, quality="auto", rows=None, preview_start=None):
         super().__init__()
         self.files, self.root, self.mode, self.fmt, self.device = files, root, mode, fmt, device
         self.cancel = threading.Event()
+        self.quality = quality
+        self.rows = list(range(len(files))) if rows is None else rows
+        self.preview_start = preview_start
     def run(self):
         ok = failed = 0
         try:
@@ -67,16 +71,21 @@ class BatchWorker(QThread):
         except Exception as error:
             self.log.emit("Không đọc được cấu hình: " + str(error) + " — dùng CPU.")
             device = "cpu"
-        for row, source in enumerate(self.files):
+        for job, (row, source) in enumerate(zip(self.rows, self.files)):
             if self.cancel.is_set():
                 break
             try:
                 self.log.emit(f"\n▶ {source}")
                 def phase(text, value):
                     self.status.emit(row, text)
-                    self.progress.emit(int((row + value/100) * 100 / len(self.files)))
+                    self.progress.emit(int((job + value/100) * 100 / len(self.files)))
+                def waveform(peaks, duration):
+                    if self.preview_start is None:
+                        self.wave.emit(row, peaks, duration)
                 outputs = process_file(source, self.root, self.mode, self.fmt, device,
-                    self.cancel, phase, lambda peaks, duration: self.wave.emit(row, peaks, duration), self.log.emit)
+                    self.cancel, phase, waveform, self.log.emit, quality=self.quality,
+                    preview_seconds=30 if self.preview_start is not None else None,
+                    preview_start=self.preview_start or 0)
                 self.output.emit(row, outputs)
                 ok += 1
             except Cancelled:
@@ -170,6 +179,8 @@ class Window(QMainWindow):
         else:
             self.resize(1180, 850)
         self.files, self.outputs, self.worker = [], {}, None
+        self.sample_run = False
+        self.active_rows = []
         self.wave_cache = {}
         self.preview_workers = set()
         self.active_preview = None
@@ -328,9 +339,18 @@ class Window(QMainWindow):
         export_top.addWidget(self.export_title, 1)
         self.fmt = QComboBox()
         self.fmt.addItems(["WAV", "MP3", "FLAC"])
+        self.quality = QComboBox()
+        for key, (label, description) in MODES.items():
+            self.quality.addItem(label, key)
+        export_top.addWidget(QLabel("Chế độ"))
+        export_top.addWidget(self.quality)
         export_top.addWidget(QLabel("Định dạng"))
         export_top.addWidget(self.fmt)
         export_layout.addLayout(export_top)
+        self.quality_note = QLabel(MODES["auto"][1])
+        self.quality_note.setObjectName("muted")
+        self.quality_note.setWordWrap(True)
+        export_layout.addWidget(self.quality_note)
         export_row = QHBoxLayout()
         destination_column = QVBoxLayout()
         names_row = QHBoxLayout()
@@ -364,6 +384,10 @@ class Window(QMainWindow):
         status_row.addWidget(self.progress, 1)
         self.stop = QPushButton("Dừng xử lý")
         self.stop.setEnabled(False)
+        self.try_button = QPushButton("Thử 30 giây")
+        self.try_button.setToolTip("Tách thử file đang chọn, bắt đầu từ vị trí thanh nghe thử.")
+        self.try_button.clicked.connect(lambda: self.run_batch(True))
+        status_row.addWidget(self.try_button)
         status_row.addWidget(self.stop)
         layout.addLayout(status_row)
         self.error_message = QLabel("")
@@ -416,6 +440,7 @@ class Window(QMainWindow):
             state == QMediaPlayer.PlaybackState.PlayingState))
         self.mode.currentIndexChanged.connect(self.update_export_labels)
         self.fmt.currentIndexChanged.connect(self.update_export_labels)
+        self.quality.currentIndexChanged.connect(self.update_export_labels)
     def select_files(self):
         paths, _ = QFileDialog.getOpenFileNames(self, "Chọn video hoặc âm thanh", "",
             "Media (" + " ".join("*"+ext for ext in sorted(SUPPORTED)) + ");;Tất cả (*)")
@@ -490,7 +515,8 @@ class Window(QMainWindow):
                 preview.start()
             self.preview.addItem("Gốc: " + Path(self.files[row]).name, self.files[row])
             for path in self.outputs.get(row, []):
-                self.preview.addItem(Path(path).name, path)
+                trial = " (thử 30s)" if Path(path).parent.name.startswith("Thu_30s_") else ""
+                self.preview.addItem(Path(path).name + trial, path)
     def cancel_previews(self):
         for task in self.preview_workers:
             task.cancel.set()
@@ -529,6 +555,10 @@ class Window(QMainWindow):
     def update_export_labels(self):
         extract = self.mode.currentData() == "extract"
         extension = self.fmt.currentText().lower()
+        self.quality_note.setText("Giữ toàn bộ âm thanh, không chạy AI." if extract else MODES[self.quality.currentData()][1])
+        busy = self.worker is not None and self.worker.isRunning()
+        self.quality.setEnabled(not busy and not extract)
+        self.try_button.setEnabled(not busy)
         self.export_title.setText("Xuất âm thanh từ video / audio" if extract else "Xuất giọng nói & nhạc nền")
         self.output_names.setText(f"am_thanh.{extension}" if extract else f"giong.{extension}  +  nhac_nen.{extension}")
         count = len(self.files)
@@ -551,28 +581,36 @@ class Window(QMainWindow):
         self.time.setText(f"{clock(position/1000)} / {clock(self.player.duration()/1000)}")
     def lock(self, busy):
         for widget in [self.add, self.add_folder, self.clear, self.mode, self.fmt,
-                       self.device, self.dest, self.choose_dest, self.start]:
+                       self.device, self.dest, self.choose_dest, self.start, self.quality, self.try_button]:
             widget.setEnabled(not busy)
         self.stop.setEnabled(busy)
-    def run_batch(self):
+        if not busy:
+            self.update_export_labels()
+    def run_batch(self, sample=False):
         if not self.files:
             QMessageBox.information(self, "Chưa có file", "Hãy chọn một hoặc nhiều file trước.")
             return
         if not self.dest.text().strip():
             QMessageBox.warning(self, "Thiếu thư mục", "Hãy chọn thư mục xuất.")
             return
+        selected = self.table.currentRow()
+        self.sample_run = bool(sample)
+        self.active_rows = [selected if selected >= 0 else 0] if sample else list(range(len(self.files)))
+        preview_start = (self.player.position() / 1000 if self.preview.currentData() == self.files[self.active_rows[0]] else 0) if sample else None
         self.player.stop()
         self.cancel_previews()
         self.progress.setValue(0)
         self.progress.setFormat("%p%")
         self.error_message.hide()
-        self.outputs.clear()
-        for row in range(len(self.files)):
+        if not sample:
+            self.outputs.clear()
+        for row in self.active_rows:
             self.table.item(row, 1).setText("Chờ xử lý")
             self.table.item(row, 2).setText("")
         self.lock(True)
-        self.worker = BatchWorker(self.files.copy(), str(Path(self.dest.text().strip()).expanduser()),
-            self.mode.currentData(), self.fmt.currentText().lower(), self.device.currentData())
+        self.worker = BatchWorker([self.files[row] for row in self.active_rows], str(Path(self.dest.text().strip()).expanduser()),
+            self.mode.currentData(), self.fmt.currentText().lower(), self.device.currentData(),
+            self.quality.currentData(), self.active_rows, preview_start)
         self.worker.status.connect(self.handle_status)
         self.worker.progress.connect(self.progress.setValue)
         self.worker.wave.connect(self.handle_wave)
@@ -583,25 +621,27 @@ class Window(QMainWindow):
         self.worker.finished.connect(lambda: self.lock(False))
         self.worker.start()
     def add_output(self, row, paths):
-        self.outputs[row] = paths
+        self.outputs[row] = self.outputs.get(row, []) + paths if self.sample_run else paths
         self.table.item(row, 2).setText(" • ".join(Path(p).name for p in paths))
         self.table.item(row, 2).setToolTip("\n".join(paths))
         if self.table.currentRow() == row:
             self.select_preview()
     def handle_status(self, row, text):
         item = self.table.item(row, 1)
-        item.setText(text)
+        item.setText("Thử 30s xong" if self.sample_run and text == "Hoàn tất" else text)
         color = "#ff9393" if "Lỗi" in text else "#6adca5" if text == "Hoàn tất" else "#9fbfff"
         item.setForeground(QColor(color))
     def batch_summary(self, ok, failed, cancelled):
         if not cancelled:
             self.progress.setValue(100)
         else:
-            for row in range(len(self.files)):
+            for row in self.active_rows:
                 if self.table.item(row, 1).text() == "Chờ xử lý":
                     self.table.item(row, 1).setText("Chưa xử lý — đã dừng")
         self.logs.appendPlainText(f"\n{'Đã dừng' if cancelled else 'Hoàn tất'}: {ok} thành công, {failed} lỗi.")
         self.progress.setFormat(f"{'Đã dừng' if cancelled else 'Kết thúc'}: {ok} thành công, {failed} lỗi")
+        if self.sample_run:
+            self.progress.setFormat(f"Thử 30s: {ok} thành công, {failed} lỗi")
     def show_error(self, row, message):
         lines = [line.strip() for line in message.splitlines() if line.strip()]
         details = [line for line in lines if "Error:" in line or "Exception:" in line]

@@ -83,5 +83,19 @@ class InterfaceTests(unittest.TestCase):
         self.assertIn("2 thành công", window.progress.format())
         self.assertTrue(all(window.table.item(row, 1).text() == "Hoàn tất" for row in range(2)))
 
+    def test_trial_uses_selected_row_and_keeps_full_waveform(self):
+        window = self.window
+        window.append_files(self.files)
+        self.wait_for(lambda: self.files[1] in window.wave_cache)
+        window.dest.setText(str(self.root / "trial"))
+        window.mode.setCurrentIndex(1)
+        window.run_batch(True)
+        self.wait_for(lambda: not window.worker.isRunning() and window.start.isEnabled())
+        self.assertEqual(set(window.outputs), {1})
+        self.assertTrue(Path(window.outputs[1][0]).parent.name.startswith("Thu_30s_"))
+        self.assertEqual(window.table.item(0, 1).text(), "Chờ xử lý")
+        self.assertAlmostEqual(window.wave_cache[self.files[1]][1], 2, places=2)
+        self.assertIn("Thử 30s", window.progress.format())
+
 if __name__ == "__main__":
     unittest.main()

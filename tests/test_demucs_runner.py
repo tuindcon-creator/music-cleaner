@@ -7,7 +7,7 @@ from array import array
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from demucs_runner import load_track
+from demucs_runner import load_track, save_float_audio
 
 @unittest.skipUnless(importlib.util.find_spec("torch") and importlib.util.find_spec("demucs"),
                      "Requires installed Demucs/PyTorch; exercised by Windows CI")
@@ -25,3 +25,13 @@ class DirectInputTests(unittest.TestCase):
             probe.assert_not_called()
             self.assertEqual(tuple(result.shape), (2, 44100))
             self.assertTrue(result.isfinite().all().item())
+    def test_intermediate_preserves_peaks_without_chunk_rescaling(self):
+        import torch
+        import soundfile as sf
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "stem.wav"
+            original = torch.tensor([[.2, 1.5, -.4], [.3, 1.8, -.5]])
+            save_float_audio(original, path, 44100)
+            samples, _ = sf.read(path, dtype="float32")
+            self.assertEqual(sf.info(path).subtype, "FLOAT")
+            torch.testing.assert_close(torch.from_numpy(samples.T.copy()), original)

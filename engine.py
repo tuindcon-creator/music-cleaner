@@ -11,6 +11,7 @@ import math
 import re
 import unicodedata
 from hardware import detect, summary
+from processing_modes import configure
 from array import array
 
 SUPPORTED = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma",
@@ -104,10 +105,11 @@ def command(args, cancel, log=lambda message: None, env=None):
                 process.kill()
                 process.wait()
 
-def convert(source, target, fmt, cancel, log):
+def convert(source, target, fmt, cancel, log, gain=1.):
     codec = {"wav": ["-c:a", "pcm_s16le"], "mp3": ["-c:a", "libmp3lame", "-b:a", "192k"],
              "flac": ["-c:a", "flac"]}[fmt]
-    command([ffmpeg(), "-nostdin", "-y", "-i", source, "-map", "0:a:0", "-vn",
+    volume = ["-af", f"volume={gain:.12g}"] if gain < 1 else []
+    command([ffmpeg(), "-nostdin", "-y", "-i", source, "-map", "0:a:0", "-vn", *volume,
              *codec, target], cancel, log)
 
 def read_waveform(source, cancel, log, bins=900):
@@ -138,21 +140,22 @@ def recoverable_device_error(error):
     return any(s in text for s in ("out of memory", "cuda error", "cuda is not",
         "no nvidia", "not compiled with cuda", "mps backend", "mps device"))
 
-def separate_chunks(decoded, scratch, profile, cancel, phase, log):
+def separate_chunks(decoded, scratch, profile, cancel, phase, log, settings=None):
     """Bound Demucs' full-file loading to short pieces, then stream the stems."""
     with wave.open(str(decoded), "rb") as source:
         duration = source.getnframes() / source.getframerate()
     if duration <= 0:
         raise RuntimeError("File không có mẫu âm thanh.")
+    if settings is None:
+        profile, settings = configure(profile, "balanced")
     chunks = max(1, math.ceil(duration / profile.chunk_seconds))
+    from audio_join import StemJoiner
+    overlap = min(settings.join_seconds, profile.chunk_seconds / 4)
+    overlap_frames = round(overlap * 44100)
     input_path = scratch / "chunk.wav"
-    stems = scratch / "stems" / "htdemucs" / "chunk"
+    stems = scratch / "stems" / settings.model / "chunk"
     destinations = [scratch / "vocals.wav", scratch / "no_vocals.wav"]
-    writers = [wave.open(str(path), "wb") for path in destinations]
-    for writer in writers:
-        writer.setnchannels(2)
-        writer.setsampwidth(2)
-        writer.setframerate(44100)
+    writers = [StemJoiner(path) for path in destinations]
     env = os.environ.copy()
     env["OMP_NUM_THREADS"] = str(profile.cpu_threads)
     env["MKL_NUM_THREADS"] = str(profile.cpu_threads)
@@ -162,13 +165,16 @@ def separate_chunks(decoded, scratch, profile, cancel, phase, log):
         for index in range(chunks):
             phase(f"AI: đoạn {index+1}/{chunks} • {profile.device.upper()}",
                   25 + int(55 * index / chunks))
-            command([ffmpeg(), "-nostdin", "-y", "-ss", str(index * profile.chunk_seconds),
-                     "-i", decoded, "-t", str(profile.chunk_seconds), "-c:a", "pcm_s16le",
+            start = max(0, index * profile.chunk_seconds - (overlap if index else 0))
+            length = profile.chunk_seconds + (overlap if index else 0)
+            command([ffmpeg(), "-nostdin", "-y", "-ss", str(start),
+                     "-i", decoded, "-t", str(length), "-c:a", "pcm_s16le",
                      input_path], cancel, log)
             def run_model():
-                command([sys.executable, Path(__file__).with_name("demucs_runner.py"), "-n", "htdemucs",
+                command([sys.executable, Path(__file__).with_name("demucs_runner.py"), "-n", settings.model,
                     "--two-stems", "vocals", "--device", profile.device,
-                    "--shifts", "1", "--segment", str(profile.segment), "-j", "1",
+                    "--shifts", str(settings.shifts), "--overlap", str(settings.overlap),
+                    "--segment", str(profile.segment), "-j", "1",
                     "-o", scratch / "stems", input_path], cancel, log, env=env)
             try:
                 run_model()
@@ -179,35 +185,29 @@ def separate_chunks(decoded, scratch, profile, cancel, phase, log):
                 profile.device, profile.segment = "cpu", 4
                 run_model()
             for stem, writer in zip(("vocals", "no_vocals"), writers):
-                # Normalize to PCM16 for wave module on every platform.
-                pcm = scratch / (stem + "_part.wav")
-                command([ffmpeg(), "-nostdin", "-y", "-i", stems / (stem + ".wav"),
-                         "-c:a", "pcm_s16le", "-ac", "2", "-ar", "44100", pcm], cancel, log)
-                with wave.open(str(pcm), "rb") as part:
-                    while True:
-                        if cancel.is_set():
-                            raise Cancelled()
-                        frames = part.readframes(44100)
-                        if not frames:
-                            break
-                        writer.writeframesraw(frames)
+                writer.append(stems / (stem + ".wav"), overlap_frames, cancel, Cancelled)
+        for writer in writers:
+            writer.finish()
     finally:
         for writer in writers:
             writer.close()
     return destinations
 
-def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log):
+def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log,
+                 quality="balanced", preview_seconds=None, preview_start=0):
     source, root = Path(source), Path(root).expanduser().resolve()
     if not source.is_file():
         raise FileNotFoundError(f"Không tìm thấy: {source}")
-    folder = create_output_folder(root, source.stem, cancel, log)
+    folder = create_output_folder(root, ("Thu_30s_" if preview_seconds else "") + source.stem, cancel, log)
     log(f"Thư mục kết quả: {folder}")
     try:
         with tempfile.TemporaryDirectory(prefix="music-cleaner-") as scratch:
             scratch = Path(scratch)
             phase("Trích xuất âm thanh", 5)
             decoded = scratch / "input.wav"
-            command([ffmpeg(), "-nostdin", "-y", "-i", source, "-map", "0:a:0", "-vn",
+            position = ["-ss", str(max(0, preview_start))] if preview_seconds else []
+            limit = ["-t", str(preview_seconds)] if preview_seconds else []
+            command([ffmpeg(), "-nostdin", "-y", *position, "-i", source, *limit, "-map", "0:a:0", "-vn",
                      "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", decoded], cancel, log)
             phase("Vẽ sóng âm", 15)
             peaks, duration = read_waveform(decoded, cancel, log)
@@ -219,17 +219,26 @@ def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log):
                 outputs = [str(result)]
             else:
                 profile = detect(device, probe_gpu=device != "cpu")
+                profile, settings = configure(profile, quality)
                 log(summary(profile))
+                log(f"Chế độ: {settings.label} • {settings.model} • {settings.shifts} lượt tăng cường • {profile.cpu_threads} luồng")
+                if settings.fallback_reason:
+                    log(settings.fallback_reason)
                 # Decode/stems/export need disk, even when RAM usage is bounded.
-                needed = decoded.stat().st_size * 4 + 128 * 2**20
+                reserve = (512 if settings.model == "htdemucs_ft" else 128) * 2**20
+                needed = decoded.stat().st_size * 6 + reserve
                 if shutil.disk_usage(scratch).free < needed or shutil.disk_usage(root).free < needed:
                     raise RuntimeError("Không đủ dung lượng trống để tách file. Chọn ổ có nhiều chỗ trống hơn.")
-                separated = separate_chunks(decoded, scratch, profile, cancel, phase, log)
+                separated = separate_chunks(decoded, scratch, profile, cancel, phase, log, settings)
                 phase("Xuất giọng và nhạc nền", 85)
                 outputs = []
                 for stem_path, name in zip(separated, ("giong", "nhac_nen")):
                     result = folder / f"{name}.{fmt}"
-                    convert(stem_path, result, fmt, cancel, log)
+                    from audio_join import peak_gain
+                    gain = peak_gain(stem_path, cancel, Cancelled)
+                    if gain < 1:
+                        log(f"Giảm mức âm toàn file {name} để tránh clipping (gain={gain:.3f}).")
+                    convert(stem_path, result, fmt, cancel, log, gain=gain)
                     outputs.append(str(result))
             if cancel.is_set():
                 raise Cancelled()

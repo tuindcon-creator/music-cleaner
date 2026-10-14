@@ -19,7 +19,16 @@ def main():
     # The CLI first tries bare 'ffprobe' on PATH and does not catch PermissionError.
     # All inputs here have already been decoded by the app's bundled FFmpeg.
     separate.load_track = load_track
+    separate.save_audio = save_float_audio
     separate.main()
+
+def save_float_audio(audio, path, samplerate=44100, **kwargs):
+    import soundfile as sf
+    target = Path(path)
+    if target.suffix.lower() != ".wav":
+        raise ValueError("The app uses WAV intermediates only.")
+    # No separate gain rescaling for each piece: preserve levels across joins.
+    sf.write(str(target), audio.detach().cpu().float().numpy().T, samplerate, subtype="FLOAT")
 
 if __name__ == "__main__":
     main()

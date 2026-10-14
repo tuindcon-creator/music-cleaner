@@ -26,6 +26,35 @@ Bấm **Nhật ký xử lý** để xem chi tiết; nhật ký tự mở khi có
 Tên file kết quả chỉ hiển thị, không phải ô đổi tên; mỗi file vẫn có thư mục xuất riêng.
 Bảng hiển thị hàng đợi, không phải các đoạn phát hiện nhạc. Không tô các vùng xanh/đỏ nhận diện nhạc khi chưa có chức năng này.
 
+## Chế độ tách và ưu tiên giữ giọng
+
+Chọn chế độ ngay ở phần xuất file:
+
+| Chế độ | Cách xử lý | Tài nguyên |
+| --- | --- | --- |
+| Tự động | Cân bằng trên GPU, Nhẹ trên CPU | Theo cấu hình |
+| Nhẹ | htdemucs, không tăng cường dịch chuyển, đoạn ngắn, tối đa 2 luồng | Thấp hơn |
+| Cân bằng | htdemucs, 1 lượt tăng cường, tối đa 4 luồng | Vừa |
+| Ưu tiên giọng | htdemucs_ft gồm nhiều mô hình tinh chỉnh, 1 lượt tăng cường | Chậm hơn |
+| Lọc kỹ | htdemucs_ft, 2 lượt tăng cường | Chậm nhất trong các lựa chọn |
+
+Với lời thoại trên RTX 3060, nên bắt đầu bằng Ưu tiên giọng rồi bấm **Thử 30 giây**.
+Nếu cần nhẹ, chọn Nhẹ hoặc Tự động. Không có chế độ vừa mạnh nhất vừa nhanh/nhẹ nhất.
+htdemucs_ft cần tải thêm các trọng số ở lần đầu, sau đó dùng cache offline.
+RAM trống dưới 3 GB sẽ tự hạ chế độ tinh chỉnh về Cân bằng và ghi lý do trong nhật ký.
+
+**Thử 30 giây** chỉ xử lý file đang chọn, xuất vào thư mục có tiền tố Thu_30s_.
+Khi nghe bản gốc, mẫu thử bắt đầu từ vị trí hiện tại trên thanh nghe thử; khi chọn kết quả, thử từ đầu file.
+Kết quả thử xuất tối đa 30 giây; file ngắn hơn sẽ có thời lượng ngắn hơn.
+Mẫu thử không đổi sóng âm/thông tin thời lượng toàn file và không thay thế kết quả cả file.
+Chọn giong.wav (thử 30s) trong khung nghe thử để đối chiếu với bản gốc.
+
+Không thêm cắt tần số, EQ, noise gate hoặc lọc phổ mạnh. AI vẫn có thể làm đổi giọng hoặc còn nhạc;
+không thể bảo đảm tuyệt đối hết nhạc và giữ nguyên giọng. Tên Ưu tiên giọng thể hiện cách chọn mô hình, không phải cam kết không biến dạng.
+Ghép đoạn bằng chồng lấn/crossfade có căn thời gian. Trung gian giữ WAV float, tránh thay đổi mức âm mỗi đoạn.
+Nếu có mẫu vượt biên PCM, giảm một mức âm cố định cho toàn stem trước xuất; không dùng limiter/compressor.
+Khuyên xuất WAV hoặc FLAC khi cần so sánh chất lượng, giữ bản gốc để đối chiếu.
+
 ## Tự nhận diện cấu hình
 
 - Đọc hệ điều hành, kiến trúc, số luồng CPU, tổng RAM và RAM còn trống.
@@ -64,7 +93,7 @@ Nếu lỗi, nguyên nhân hiện phía trên nhật ký; dùng Lưu nhật ký 
 
 Demucs tách nguồn vocals/accompaniment, không bảo đảm lời thoại sạch tuyệt đối.
 Bản này tách toàn bộ file, chưa tự nhận diện từng đoạn có nhạc theo hình tham khảo.
-Việc chia file để tiết kiệm RAM có thể tạo khác biệt tại ranh giới các phần.
+Chồng lấn/crossfade giảm chuyển tiếp đột ngột ở ranh giới phần; vẫn có thể còn khác biệt do dự đoán AI.
 Sóng âm là của file vừa xử lý; tiến độ theo giai đoạn, không phải phần trăm suy luận chính xác.
 File nhiều giờ vẫn cần nhiều dung lượng đĩa; WAV PCM16 tạm có giới hạn kích thước RIFF khoảng 4 GB.
 Không xuất lại video đã thay giọng. Bản nguồn dùng Python, chưa phải EXE độc lập.
