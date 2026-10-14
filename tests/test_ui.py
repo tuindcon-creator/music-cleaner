@@ -5,6 +5,7 @@ import tempfile
 import time
 import unittest
 import wave
+from unittest.mock import patch
 from array import array
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtTest import QTest
 from app import Window, STYLE
+import engine
 
 class InterfaceTests(unittest.TestCase):
     @classmethod
@@ -107,6 +109,36 @@ class InterfaceTests(unittest.TestCase):
         self.assertIn("giong_loc", window.output_names.text())
         window.mode.setCurrentIndex(1)
         self.assertFalse(window.cleanup.isEnabled())
+
+    def test_missing_filtered_voice_is_not_counted_as_success(self):
+        window = self.window
+        window.append_files(self.files)
+        window.dest.setText(str(self.root / "results"))
+        window.cleanup.setCurrentIndex(1)
+        def partial(source, *args, **kwargs):
+            return engine.ProcessingResult([source], state="partial", warning="Chưa tạo giong_loc.wav: model failed")
+        with patch("app.process_file", side_effect=partial), patch("app.detect", return_value=engine.detect("cpu")):
+            window.run_batch()
+            self.wait_for(lambda: not window.worker.isRunning() and window.start.isEnabled())
+        self.assertIn("0 thành công", window.progress.format())
+        self.assertIn("2 chưa đủ kết quả", window.progress.format())
+        self.assertIn("Thiếu giọng lọc", window.table.item(0, 1).text())
+        self.assertTrue(window.error_message.isVisible())
+        self.assertTrue(window.log_toggle.isChecked())
+
+    def test_partial_failure_does_not_stop_remaining_batch(self):
+        window = self.window
+        window.append_files(self.files)
+        calls = []
+        def process(source, *args, **kwargs):
+            calls.append(source)
+            return engine.ProcessingResult([source], state="partial" if len(calls) == 1 else "complete", warning="Chưa tạo giong_loc.wav")
+        with patch("app.process_file", side_effect=process), patch("app.detect", return_value=engine.detect("cpu")):
+            window.run_batch()
+            self.wait_for(lambda: not window.worker.isRunning() and window.start.isEnabled())
+        self.assertEqual(calls, self.files)
+        self.assertIn("1 thành công", window.progress.format())
+        self.assertIn("1 chưa đủ kết quả", window.progress.format())
 
 if __name__ == "__main__":
     unittest.main()

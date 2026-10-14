@@ -1,4 +1,4 @@
-# Music Cleaner 1.2 — Windows build
+# Music Cleaner 1.3 — Windows build
 
 Ứng dụng tách giọng/nhạc nền, trích âm thanh từ video và xử lý hàng loạt, giao diện tiếng Việt.
 
@@ -15,6 +15,17 @@ Nếu winget không có hoặc bị quản trị viên chặn, cài Python 3.11 
 Không cần cài FFmpeg riêng. Cần Internet cho bộ cài và lần đầu tải mô hình AI.
 AI đọc trực tiếp WAV đã giải mã, không gọi ffprobe trên PATH của Windows.
 Sau khi thư viện và mô hình đã có trên máy, xử lý được offline; không tải media lên dịch vụ.
+
+## Bản 1.3 sửa thiếu file giọng lọc
+
+- Sửa lỗi có thật ở phần lẻ cuối file: DPDFNet trả âm thanh theo khung STFT, khiến mã cũ từ chối các thời lượng như 30,001 giây và 65,013 giây. Thêm ngữ cảnh ngắn trước suy luận rồi cắt kết quả đúng thời lượng đầu vào; không chèn im lặng thay cho dự đoán bị thiếu.
+- Khi bật giảm nhạc sót, kiểm tra tải/nạp mô hình lời thoại trước bước tách nguồn để phát hiện sớm thư viện/mạng/mô hình bị lỗi.
+- Hiển thị tải mô hình, đoạn/kênh đang lọc và tiến độ thay vì đứng ở một thông báo CPU cố định.
+- Chỉ đặt tên **giong_loc.wav/mp3/flac** sau khi xuất và kiểm tra số kênh/thời lượng. Không hiển thị file xuất dở như kết quả hoàn tất.
+- Kết quả tách có nhưng lọc lỗi/dừng được ghi **chưa đủ kết quả**, không cộng vào số thành công. Giữ bản trước lọc cả ở chức năng Lọc lời thoại đã tách và tiếp tục file kế tiếp khi lỗi.
+- Mỗi thư mục có **ket_qua.json** ghi file cần tạo, đã tạo, còn thiếu và lý do. Có thể xem bằng Notepad.
+- Không đổi lựa chọn lọc mặc định: **Tắt — không tạo giong_loc**. Muốn có bản lọc, chọn **Nhẹ** hoặc **Mạnh hơn**; các mức này có thể ảnh hưởng giọng.
+- Với file đã tách, chọn giong.wav → chức năng **Lọc lời thoại đã tách** để chỉ chạy bước còn thiếu, tránh chạy lại Demucs.
 
 ## Bản 1.2 tăng tốc
 

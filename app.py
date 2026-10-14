@@ -54,7 +54,7 @@ class BatchWorker(QThread):
     output = Signal(int, list)
     log = Signal(str)
     error = Signal(int, str)
-    completed = Signal(int, int, bool)
+    completed = Signal(int, int, int, bool)
     def __init__(self, files, root, mode, fmt, device, quality="auto", rows=None, preview_start=None, cleanup=0):
         super().__init__()
         self.files, self.root, self.mode, self.fmt, self.device = files, root, mode, fmt, device
@@ -64,7 +64,7 @@ class BatchWorker(QThread):
         self.preview_start = preview_start
         self.cleanup = cleanup
     def run(self):
-        ok = failed = 0
+        ok = partial = failed = 0
         try:
             profile = detect(self.device, probe_gpu=self.mode == "separate")
             self.log.emit(summary(profile))
@@ -88,7 +88,14 @@ class BatchWorker(QThread):
                     preview_seconds=30 if self.preview_start is not None else None,
                     preview_start=self.preview_start or 0, cleanup=self.cleanup)
                 self.output.emit(row, outputs)
-                ok += 1
+                state = getattr(outputs, "state", "complete")
+                if state == "complete":
+                    ok += 1
+                else:
+                    partial += 1
+                    message = getattr(outputs, "warning", "Thiếu file giọng lọc.")
+                    self.status.emit(row, "Đã dừng lọc; giữ bản trước lọc" if state == "cancelled" else "Thiếu giọng lọc — xem nhật ký")
+                    self.error.emit(row, message)
             except Cancelled:
                 self.status.emit(row, "Đã dừng")
                 break
@@ -97,7 +104,7 @@ class BatchWorker(QThread):
                 self.status.emit(row, "Lỗi — xem nhật ký")
                 self.log.emit(traceback.format_exc())
                 self.error.emit(row, str(error))
-        self.completed.emit(ok, failed, self.cancel.is_set())
+        self.completed.emit(ok, partial, failed, self.cancel.is_set())
 
 
 def card():
@@ -172,7 +179,7 @@ class PreviewWorker(QThread):
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Music Cleaner 1.2 • Tách nhạc nền & âm thanh")
+        self.setWindowTitle("Music Cleaner 1.3 • Tách nhạc nền & âm thanh")
         screen = QApplication.primaryScreen()
         if screen:
             area = screen.availableGeometry()
@@ -356,7 +363,7 @@ class Window(QMainWindow):
         cleanup_row = QHBoxLayout()
         cleanup_row.addWidget(QLabel("Giảm nhạc sót trong lời thoại"))
         self.cleanup = QComboBox()
-        self.cleanup.addItem("Tắt — giữ giọng trước lọc", 0)
+        self.cleanup.addItem("Tắt — không tạo giong_loc", 0)
         self.cleanup.addItem("Nhẹ — ưu tiên giọng", 12)
         self.cleanup.addItem("Mạnh hơn — cần nghe thử", 18)
         cleanup_row.addWidget(self.cleanup, 1)
@@ -657,19 +664,20 @@ class Window(QMainWindow):
     def handle_status(self, row, text):
         item = self.table.item(row, 1)
         item.setText("Thử 30s xong" if self.sample_run and text == "Hoàn tất" else text)
-        color = "#ff9393" if text.startswith("Lỗi") else "#ffc783" if "lỗi" in text.lower() else "#6adca5" if text == "Hoàn tất" else "#9fbfff"
+        color = "#ff9393" if text.startswith("Lỗi") else "#ffc783" if "lỗi" in text.lower() or text.startswith("Thiếu") else "#6adca5" if text == "Hoàn tất" else "#9fbfff"
         item.setForeground(QColor(color))
-    def batch_summary(self, ok, failed, cancelled):
+    def batch_summary(self, ok, partial, failed, cancelled):
         if not cancelled:
             self.progress.setValue(100)
         else:
             for row in self.active_rows:
                 if self.table.item(row, 1).text() == "Chờ xử lý":
                     self.table.item(row, 1).setText("Chưa xử lý — đã dừng")
-        self.logs.appendPlainText(f"\n{'Đã dừng' if cancelled else 'Hoàn tất'}: {ok} thành công, {failed} lỗi.")
-        self.progress.setFormat(f"{'Đã dừng' if cancelled else 'Kết thúc'}: {ok} thành công, {failed} lỗi")
+        details = f"{ok} thành công, {partial} chưa đủ kết quả, {failed} lỗi"
+        self.logs.appendPlainText(f"\n{'Đã dừng' if cancelled else 'Kết thúc'}: {details}.")
+        self.progress.setFormat(f"{'Đã dừng' if cancelled else 'Kết thúc'}: {details}")
         if self.sample_run:
-            self.progress.setFormat(f"Thử 30s: {ok} thành công, {failed} lỗi")
+            self.progress.setFormat(f"Thử 30s: {details}")
     def show_error(self, row, message):
         lines = [line.strip() for line in message.splitlines() if line.strip()]
         details = [line for line in lines if "Error:" in line or "Exception:" in line]

@@ -19,6 +19,8 @@ jobs:
       - run: .venv\Scripts\python.exe -m unittest discover -s tests -v
       - name: Real speech model smoke test
         run: .venv\Scripts\python.exe tests/smoke_speech_model.py
+      - name: Real Demucs and speech cleanup end-to-end
+        run: .venv\Scripts\python.exe tests/smoke_full_pipeline.py
       - name: GUI smoke check
         env:
           QT_QPA_PLATFORM: offscreen

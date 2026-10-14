@@ -11,6 +11,7 @@ import math
 import re
 import unicodedata
 import time
+import json
 from model_worker import ModelWorker
 from hardware import detect, summary
 from processing_modes import configure
@@ -20,6 +21,23 @@ SUPPORTED = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma",
              ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts"}
 class Cancelled(Exception):
     pass
+
+class ProcessingResult(list):
+    """Usable outputs plus an explicit incomplete/cancelled cleanup status."""
+    def __init__(self, paths=(), state="complete", warning=""):
+        super().__init__(paths)
+        self.state, self.warning = state, warning
+
+def write_report(folder, outputs, mode, fmt, cleanup):
+    expected = ([f"am_thanh.{fmt}"] if mode == "extract" else
+                [f"giong_goc.{fmt}", f"giong_loc.{fmt}"] if mode == "speech" else
+                [f"giong.{fmt}", f"nhac_nen.{fmt}"] + ([f"giong_loc.{fmt}"] if cleanup else []))
+    present = [Path(p).name for p in outputs if Path(p).is_file()]
+    report = dict(version="1.3", state=outputs.state, requested=expected,
+                  created=present, missing=[name for name in expected if name not in present],
+                  reason=outputs.warning)
+    (folder / "ket_qua.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    return outputs
 
 def path_units(text):
     return len(str(text).encode("utf-16-le")) // 2
@@ -75,7 +93,7 @@ def ffmpeg():
     import imageio_ffmpeg
     return imageio_ffmpeg.get_ffmpeg_exe()
 
-def command(args, cancel, log=lambda message: None, env=None):
+def command(args, cancel, log=lambda message: None, env=None, progress_path=None, on_progress=None):
     """Drain child output to disk to avoid pipe deadlocks and permit cancellation."""
     if cancel.is_set():
         raise Cancelled()
@@ -88,7 +106,16 @@ def command(args, cancel, log=lambda message: None, env=None):
         process = subprocess.Popen([str(a) for a in args], stdout=output,
                                    stderr=subprocess.STDOUT, creationflags=flags, env=runtime_env)
         try:
+            last_progress = None
             while process.poll() is None:
+                if progress_path is not None and on_progress is not None:
+                    try:
+                        progress = json.loads(Path(progress_path).read_text(encoding="utf-8"))
+                        if progress != last_progress:
+                            on_progress(progress)
+                            last_progress = progress
+                    except (OSError, ValueError):
+                        pass
                 if cancel.wait(0.15):
                     process.terminate()
                     try:
@@ -232,19 +259,25 @@ def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log,
                 phase("Xuất âm thanh", 85)
                 result = folder / f"am_thanh.{fmt}"
                 convert(decoded, result, fmt, cancel, log)
-                outputs = [str(result)]
+                outputs = ProcessingResult([str(result)])
             elif mode == "speech":
                 from audio_join import peak_gain
                 result = folder / f"giong_goc.{fmt}"
                 convert(decoded, result, fmt, cancel, log)
-                outputs = [str(result)]
+                outputs = ProcessingResult([str(result)])
                 try:
+                    check_speech_model(scratch, cleanup or 12, cancel, phase, log)
                     outputs.append(clean_voice(decoded, scratch, folder, fmt, cleanup or 12, cancel, phase, log))
                 except Cancelled:
                     (folder / f"giong_loc.{fmt}").unlink(missing_ok=True)
                     log("Đã dừng lọc bổ sung; giữ bản giọng trước lọc.")
+                    outputs.state, outputs.warning = "cancelled", "Đã dừng trước khi xuất giọng lọc."
                     phase("Giữ bản trước lọc; đã dừng", 100)
-                    return outputs
+                    return write_report(folder, outputs, mode, fmt, cleanup)
+                except Exception as error:
+                    outputs.state, outputs.warning = "partial", f"Chưa tạo giong_loc.{fmt}: {error}"
+                    log("Lọc bổ sung chưa hoàn tất: " + outputs.warning)
+                    final_status = "Thiếu giọng lọc — xem nhật ký"
             else:
                 profile = detect(device, probe_gpu=device != "cpu")
                 profile, settings = configure(profile, quality)
@@ -257,9 +290,12 @@ def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log,
                 needed = decoded.stat().st_size * 6 + reserve
                 if shutil.disk_usage(scratch).free < needed or shutil.disk_usage(root).free < needed:
                     raise RuntimeError("Không đủ dung lượng trống để tách file. Chọn ổ có nhiều chỗ trống hơn.")
+                if cleanup:
+                    # Find a broken dependency/download before expensive separation.
+                    check_speech_model(scratch, cleanup, cancel, phase, log)
                 separated = separate_chunks(decoded, scratch, profile, cancel, phase, log, settings)
                 phase("Xuất giọng và nhạc nền", 85)
-                outputs = []
+                outputs = ProcessingResult()
                 for stem_path, name in zip(separated, ("giong", "nhac_nen")):
                     result = folder / f"{name}.{fmt}"
                     from audio_join import peak_gain
@@ -275,31 +311,60 @@ def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log,
                     except Cancelled:
                         (folder / f"giong_loc.{fmt}").unlink(missing_ok=True)
                         log("Đã dừng lọc bổ sung; giữ kết quả tách giọng và nhạc nền.")
+                        outputs.state, outputs.warning = "cancelled", "Đã dừng trước khi xuất giọng lọc."
                         phase("Đã tách; đã dừng lọc", 100)
-                        return outputs
+                        return write_report(folder, outputs, mode, fmt, cleanup)
                     except Exception as error:
                         # Separation is already complete. Preserve usable unfiltered
                         # results if optional model download/denoising fails.
                         (folder / f"giong_loc.{fmt}").unlink(missing_ok=True)
                         log(f"Lọc bổ sung chưa hoàn tất: {error}. Đã giữ giọng và nhạc nền trước lọc.")
-                        final_status = "Đã tách; lọc bổ sung lỗi"
+                        outputs.state, outputs.warning = "partial", f"Chưa tạo giong_loc.{fmt}: {error}"
+                        final_status = "Thiếu giọng lọc — xem nhật ký"
             if cancel.is_set():
                 raise Cancelled()
             phase(final_status, 100)
-            return outputs
+            return write_report(folder, outputs, mode, fmt, cleanup)
     except BaseException:
         # This directory belongs to this job alone; remove partial results.
         shutil.rmtree(folder, ignore_errors=True)
         raise
 
+def check_speech_model(scratch, strength, cancel, phase, log):
+    phase("Kiểm tra mô hình lời thoại trước khi xử lý", 18)
+    progress_path = scratch / "model_progress.json"
+    command([sys.executable, Path(__file__).with_name("speech_cleanup.py"),
+             "--check-model", "--strength", strength, "--progress", progress_path], cancel, log,
+            progress_path=progress_path,
+            on_progress=lambda p: phase(p.get("message", "Kiểm tra mô hình lời thoại"), 18))
+
 def clean_voice(source, scratch, folder, fmt, strength, cancel, phase, log):
     from audio_join import peak_gain
-    phase("Lọc lời thoại bổ sung trên CPU (lần đầu tải mô hình)", 90)
+    phase("Lọc lời thoại trên CPU — chuẩn bị", 86)
     filtered = scratch / "speech_filtered.wav"
+    progress_path = scratch / "speech_progress.json"
+    def progress(p):
+        fraction = max(0., min(1., float(p.get("fraction", 0))))
+        phase(p.get("message", "Lọc lời thoại trên CPU"), 86 + int(10 * fraction))
     command([sys.executable, Path(__file__).with_name("speech_cleanup.py"),
              "--input", source, "--output", filtered, "--strength", strength,
-             "--threads", "2"], cancel, log)
+             "--threads", "2", "--progress", progress_path], cancel, log,
+            progress_path=progress_path, on_progress=progress)
+    phase("Kiểm tra và xuất file giọng lọc", 97)
     result = folder / f"giong_loc.{fmt}"
-    convert(filtered, result, fmt, cancel, log, gain=peak_gain(filtered, cancel, Cancelled))
+    pending = folder / f".giong_loc.pending.{fmt}"
+    try:
+        convert(filtered, pending, fmt, cancel, log, gain=peak_gain(filtered, cancel, Cancelled))
+        import soundfile as sf
+        original, exported = sf.info(str(source)), sf.info(str(pending))
+        tolerance = .1 if fmt == "mp3" else .002
+        if exported.frames == 0 or exported.channels != original.channels or abs(exported.duration - original.duration) > tolerance:
+            raise RuntimeError("File giọng lọc chưa đúng thời lượng hoặc số kênh.")
+        if cancel.is_set():
+            raise Cancelled()
+        pending.replace(result)
+    finally:
+        pending.unlink(missing_ok=True)
+    log(f"Đã xuất và kiểm tra giọng lọc: {result}")
     return str(result)
 
