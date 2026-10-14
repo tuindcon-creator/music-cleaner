@@ -3,7 +3,7 @@ from dataclasses import dataclass, replace
 
 MODES = {
     "auto": ("Tự động", "Cân bằng trên GPU; Nhẹ trên CPU. Giọng gốc luôn có thể nghe đối chiếu."),
-    "light": ("Nhẹ", "Ít tài nguyên, chạy nhanh hơn; có thể còn nhạc nền."),
+    "light": ("Nhẹ", "Giảm mức dùng CPU/RAM để máy vẫn mượt; có thể chạy lâu hơn và còn nhạc."),
     "balanced": ("Cân bằng", "Một mô hình, mức xử lý vừa phải. Nên nghe thử trước."),
     "natural": ("Ưu tiên giọng", "Mô hình tinh chỉnh, không thêm bộ lọc khử nhiễu. Chạy chậm hơn; lần đầu tải thêm mô hình."),
     "thorough": ("Lọc kỹ", "Mô hình tinh chỉnh và nhiều lượt tách hơn. Tốn thời gian hơn; nên thử 30 giây trước."),
