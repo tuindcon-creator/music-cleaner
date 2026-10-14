@@ -57,6 +57,8 @@ Apple GPU được thử qua MPS, nhưng Demucs có thể cần quay về CPU.
 
 Xuất WAV, MP3 192 kbps hoặc FLAC. Tách AI xuất giong và nhac_nen; trích âm thanh xuất am_thanh.
 Mỗi file có thư mục riêng, thêm hậu tố khi tên trùng; file lỗi không chặn hàng đợi.
+Tên thư mục kết quả được chuẩn hóa cho Windows: bỏ dấu chấm/khoảng trắng cuối tên, thay ký tự cấm, tránh tên dành riêng và rút ngắn tên dài. Không đổi tên video/audio gốc.
+Kiểm tra ghi vào thư mục xuất trước khi giải mã hoặc chạy AI; đường dẫn quá dài cần chọn thư mục ngắn hơn.
 Có nghe thử bản gốc/kết quả, sóng âm, nhật ký và nút dừng.
 Nếu lỗi, nguyên nhân hiện phía trên nhật ký; dùng Lưu nhật ký lỗi để xuất thông tin chẩn đoán.
 

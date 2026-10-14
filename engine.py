@@ -8,6 +8,8 @@ import threading
 import wave
 import shutil
 import math
+import re
+import unicodedata
 from hardware import detect, summary
 from array import array
 
@@ -15,6 +17,56 @@ SUPPORTED = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma",
              ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts"}
 class Cancelled(Exception):
     pass
+
+def path_units(text):
+    return len(str(text).encode("utf-16-le")) // 2
+
+def safe_output_name(stem, max_units=100):
+    """Portable directory component; keep original media names untouched."""
+    name = unicodedata.normalize("NFC", str(stem))
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]', "_", name).strip(" .")
+    reserved = {"CON", "PRN", "AUX", "NUL", "CLOCK$", "CONIN$", "CONOUT$"}
+    reserved.update(f"{prefix}{number}" for prefix in ("COM", "LPT")
+                    for number in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "¹", "²", "³"))
+    if name.split(".")[0].upper() in reserved:
+        name = "_" + name
+    trimmed = ""
+    for character in name:
+        if path_units(trimmed + character) > max_units:
+            break
+        trimmed += character
+    return trimmed.rstrip(" .") or "am_thanh"
+
+def create_output_folder(root, stem, cancel, log):
+    root = Path(root).expanduser().resolve()
+    # Leave space for suffixes and the longest result filename, without a
+    # registry change or the extended-path syntax unsupported by some tools.
+    budget = min(100, 240 - path_units(root) - 2 - len("nhac_nen.flac") - 12)
+    if budget < 8:
+        raise RuntimeError("Đường dẫn thư mục xuất quá dài. Chọn thư mục ngắn hơn, ví dụ D:\\MusicOutput.")
+    name = safe_output_name(stem, budget)
+    if name != stem:
+        log(f"Đã chuẩn hóa tên thư mục xuất: {name}")
+    root.mkdir(parents=True, exist_ok=True)
+    index = 1
+    while True:
+        if cancel.is_set():
+            raise Cancelled()
+        folder = root / (name if index == 1 else f"{name}_{index}")
+        try:
+            folder.mkdir()
+            break
+        except FileExistsError:
+            index += 1
+    try:
+        probe = folder / ".write-check"
+        with probe.open("xb") as stream:
+            stream.write(b"Music Cleaner output check")
+        probe.unlink()
+    except OSError as error:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise RuntimeError(f"Không ghi được vào thư mục xuất: {folder}. Chọn thư mục khác. {error}") from error
+    return folder
 
 def ffmpeg():
     import imageio_ffmpeg
@@ -145,19 +197,11 @@ def separate_chunks(decoded, scratch, profile, cancel, phase, log):
     return destinations
 
 def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log):
-    source, root = Path(source), Path(root)
+    source, root = Path(source), Path(root).expanduser().resolve()
     if not source.is_file():
         raise FileNotFoundError(f"Không tìm thấy: {source}")
-    root.mkdir(parents=True, exist_ok=True)
-    # mkdir is atomic: repeated filenames, batches and concurrent runs never overwrite.
-    index = 1
-    while True:
-        folder = root / (source.stem if index == 1 else f"{source.stem}_{index}")
-        try:
-            folder.mkdir()
-            break
-        except FileExistsError:
-            index += 1
+    folder = create_output_folder(root, source.stem, cancel, log)
+    log(f"Thư mục kết quả: {folder}")
     try:
         with tempfile.TemporaryDirectory(prefix="music-cleaner-") as scratch:
             scratch = Path(scratch)
