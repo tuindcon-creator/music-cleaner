@@ -89,7 +89,7 @@ def clean(source, target, strength=12, threads=2, model_path=None, model_factory
                         results.append(samples)
                     sf.write(str(part), np.column_stack(results), 48000, subtype="FLOAT")
                     writer.append(part, 24000, _NeverCancelled(), RuntimeError)
-                    print(f"Lọc lời thoại: đoạn {index+1}", flush=True)
+                    print(f"Speech cleanup: part {index+1}", flush=True)
             writer.finish()
         finally:
             writer.close()

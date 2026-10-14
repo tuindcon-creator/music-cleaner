@@ -1,4 +1,7 @@
 name: Windows checks
+env:
+  PYTHONIOENCODING: utf-8
+  PYTHONUTF8: "1"
 on: [push, pull_request]
 jobs:
   test:

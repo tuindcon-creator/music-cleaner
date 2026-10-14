@@ -81,9 +81,10 @@ def command(args, cancel, log=lambda message: None, env=None):
     if Path(str(args[0])).name.lower().startswith("ffmpeg"):
         args[1:1] = ["-hide_banner", "-loglevel", "error", "-nostats"]
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    runtime_env = {**os.environ, **(env or {}), "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
     with tempfile.TemporaryFile() as output:
         process = subprocess.Popen([str(a) for a in args], stdout=output,
-                                   stderr=subprocess.STDOUT, creationflags=flags, env=env)
+                                   stderr=subprocess.STDOUT, creationflags=flags, env=runtime_env)
         try:
             while process.poll() is None:
                 if cancel.wait(0.15):

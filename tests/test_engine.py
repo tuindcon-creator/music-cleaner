@@ -95,6 +95,11 @@ class ProcessingTests(unittest.TestCase):
                 engine.command([sys.executable, "-c", "import time; time.sleep(30)"], self.cancel)
         finally:
             timer.cancel()
+    def test_child_logs_preserve_vietnamese_utf8(self):
+        messages = []
+        engine.command([sys.executable, "-c", "print('Giọng nói tiếng Việt')"],
+                       self.cancel, messages.append)
+        self.assertIn("Giọng nói tiếng Việt", "".join(messages))
 
     def test_multi_chunk_merge_and_gpu_failure_retries_on_cpu(self):
         real_command = engine.command
