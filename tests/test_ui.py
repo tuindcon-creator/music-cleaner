@@ -140,5 +140,48 @@ class InterfaceTests(unittest.TestCase):
         self.assertIn("1 thành công", window.progress.format())
         self.assertIn("1 chưa đủ kết quả", window.progress.format())
 
+    def test_reseparate_batch_uses_gpu_selection_and_distinct_result_names(self):
+        window = self.window
+        window.append_files(self.files)
+        window.mode.setCurrentIndex(window.mode.findData("reseparate"))
+        window.device.setCurrentIndex(window.device.findData("cuda"))
+        self.assertTrue(window.device.isEnabled())
+        self.assertTrue(window.quality.isEnabled())
+        self.assertIn("giong_tach_lai.wav", window.output_names.text())
+        self.assertIn("giong_truoc_tach_lai.wav", window.output_names.text())
+        calls = []
+        profile = engine.detect("cpu")
+        profile.device = "cuda"
+        def process(source, root, mode, fmt, device, *args, **kwargs):
+            calls.append((source, mode, device))
+            return engine.ProcessingResult([source])
+        with patch("app.process_file", side_effect=process), patch("app.detect", return_value=profile):
+            window.run_batch()
+            self.wait_for(lambda: not window.worker.isRunning() and window.start.isEnabled())
+        self.assertEqual(calls, [(path,"reseparate","cuda") for path in self.files])
+        self.assertIn("2 thành công", window.progress.format())
+
+    def test_one_click_reseparation_only_processes_chosen_preview_and_keeps_other_results(self):
+        window = self.window
+        window.append_files(self.files)
+        window.outputs[0] = [self.files[0]]
+        voice = self.root / "giong_loc.wav"
+        voice.write_bytes(Path(self.files[1]).read_bytes())
+        window.outputs[1] = [str(voice)]
+        window.table.selectRow(1)
+        window.select_preview()
+        window.preview.setCurrentIndex(window.preview.findData(str(voice)))
+        calls = []
+        def process(source, root, mode, *args, **kwargs):
+            calls.append((source, mode))
+            return engine.ProcessingResult([source])
+        with patch("app.process_file", side_effect=process), patch("app.detect", return_value=engine.detect("cpu")):
+            window.retry_voice.click()
+            self.wait_for(lambda: window.worker is not None and not window.worker.isRunning() and window.start.isEnabled())
+        self.assertEqual(calls, [(str(voice.resolve()),"reseparate")])
+        self.assertEqual(window.outputs[0],[self.files[0]])
+        self.assertEqual(window.outputs[1],[str(voice)])
+        self.assertEqual(window.active_rows,[2])
+
 if __name__ == "__main__":
     unittest.main()

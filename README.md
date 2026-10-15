@@ -1,4 +1,4 @@
-# Music Cleaner 1.3.1 — Windows build
+# Music Cleaner 1.4 — Windows build
 
 Ứng dụng tách giọng/nhạc nền, trích âm thanh từ video và xử lý hàng loạt, giao diện tiếng Việt.
 
@@ -15,6 +15,16 @@ Nếu winget không có hoặc bị quản trị viên chặn, cài Python 3.11 
 Không cần cài FFmpeg riêng. Cần Internet cho bộ cài và lần đầu tải mô hình AI.
 AI đọc trực tiếp WAV đã giải mã, không gọi ffprobe trên PATH của Windows.
 Sau khi thư viện và mô hình đã có trên máy, xử lý được offline; không tải media lên dịch vụ.
+
+## Bản 1.4: tách lại các file giọng chưa đạt
+
+- Trong **Tùy chọn → Chức năng**, chọn **Tách lại giọng bằng AI (còn lẫn nhạc)**, thêm các file giọng cần xử lý và bấm **TÁCH LẠI GIỌNG BẰNG AI**. Áp dụng cho một file hoặc cả danh sách.
+- Ngay tại khung nghe thử, chọn giong.wav/giong_loc.wav hoặc file giọng cần xử lý và bấm **Tách lại file đang nghe bằng AI**. Chỉ file đang nghe được xử lý; kết quả của các hàng khác được giữ trong danh sách.
+- Chạy thêm đúng một lượt tách nguồn Demucs trên file giọng đã chọn. Chọn chất lượng và thiết bị như bước tách ban đầu; Tự động sử dụng GPU khi dùng được.
+- Mỗi lượt xuất vào thư mục riêng có tiền tố **Tach_lai_**, thêm hậu tố khi trùng tên. Giữ file đầu vào nguyên vẹn.
+- **giong_truoc_tach_lai.wav**: bản âm thanh đầu vào để đối chiếu. **giong_tach_lai.wav**: giọng sau lượt AI mới. **nhac_tach_lai.wav**: phần được AI tách ra (có thể gồm cả thành phần giọng bị nhầm).
+- Nếu bật Giảm nhạc sót, tạo thêm **giong_loc.wav** từ giọng vừa tách lại. Có thể chọn WAV/MP3/FLAC.
+- Có **Thử 30 giây** cho chế độ tách lại. Tách lặp nhiều lần có thể làm giọng mất chi tiết; kết quả có thể vẫn còn nhạc. Nên nghe đối chiếu trước khi chạy cả file, ưu tiên dùng đầu vào gốc có chất lượng tốt khi có thể.
 
 ## Bản 1.3.1 sửa WinError 5 khi cập nhật tiến độ
 

@@ -1,4 +1,4 @@
-# Kiểm chứng bản 1.3.1
+# Kiểm chứng bản 1.4
 
 - Các kiểm thử hồi quy gồm đường dẫn Windows, xử lý hàng loạt, hủy tác vụ, float/crossfade, chế độ và nghe thử.
 - Bổ sung kiểm thử bộ lọc lời thoại theo phần, stereo/thời lượng, checksum cache, mẫu không hợp lệ, giữ kết quả đã tách khi lọc lỗi/hủy, GPU probe tách tiến trình.
@@ -16,3 +16,6 @@
 - Bản 1.3.1: nhật ký người dùng xác nhận PermissionError WinError 5 tại thao tác thay speech_progress.json sau đoạn 63. Không commit nhật ký hoặc đường dẫn riêng của người dùng.
 - Kiểm thử ép 2.000 lần lỗi thay file tiến độ, lỗi ghi/xóa file phụ và phục hồi sau lỗi; lỗi xuất âm thanh vẫn phải được báo.
 - Kiểm thử Windows dùng CreateFileW không có FILE_SHARE_DELETE: thao tác cũ thực sự phát sinh PermissionError, bộ báo tiến độ mới bỏ qua và tiếp tục. Thử mô hình thật giữ khóa file tiến độ qua toàn bộ preflight/lọc, xác nhận đủ ba file, đúng stereo/thời lượng và giữ nguyên đầu vào.
+
+- Bản 1.4: hồi quy tách lại chạy đúng một lượt AI, giữ bản trước và file nguồn, thư mục không ghi đè, báo cáo chế độ/tên file, giữ kết quả khi lọc bổ sung lỗi, thử 30 giây và tách lại hàng loạt. Kiểm tra nút một file chỉ xử lý file đang nghe và không xóa kết quả các hàng khác.
+- Kiểm tra mô hình thật trên Windows: lấy giong.wav do lượt Demucs đầu xuất ra, chạy lại bằng chế độ tách lại, xác nhận đủ ba file mới, đúng stereo/thời lượng và nguồn giữ nguyên. Không khẳng định tách nhiều lượt luôn cải thiện chất lượng giọng hoặc nhạc.

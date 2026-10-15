@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
     QLabel, QPushButton, QFileDialog, QComboBox, QLineEdit, QTableWidget, QTableWidgetItem,
     QHeaderView, QProgressBar, QPlainTextEdit, QMessageBox, QSlider, QScrollArea, QFrame, QStyle)
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
-from engine import SUPPORTED, process_file, Cancelled, read_waveform
+from engine import SUPPORTED, process_file, Cancelled, read_waveform, expected_outputs
 from hardware import detect, summary, validate_platform
 from processing_modes import MODES
 
@@ -66,7 +66,7 @@ class BatchWorker(QThread):
     def run(self):
         ok = partial = failed = 0
         try:
-            profile = detect(self.device, probe_gpu=self.mode == "separate")
+            profile = detect(self.device, probe_gpu=self.mode in ("separate", "reseparate"))
             self.log.emit(summary(profile))
             device = profile.device
         except Exception as error:
@@ -179,7 +179,7 @@ class PreviewWorker(QThread):
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Music Cleaner 1.3.1 • Tách nhạc nền & âm thanh")
+        self.setWindowTitle("Music Cleaner 1.4 • Tách nhạc nền & âm thanh")
         screen = QApplication.primaryScreen()
         if screen:
             area = screen.availableGeometry()
@@ -233,6 +233,7 @@ class Window(QMainWindow):
         self.mode.addItem("Tách giọng + nhạc nền bằng AI", "separate")
         self.mode.addItem("Trích âm thanh từ video / audio", "extract")
         self.mode.addItem("Lọc lời thoại đã tách (giong.wav)", "speech")
+        self.mode.addItem("Tách lại giọng bằng AI (còn lẫn nhạc)", "reseparate")
         self.device = QComboBox()
         self.device.addItem("Tự động (khuyên dùng)", "auto")
         self.device.addItem("CPU", "cpu")
@@ -338,6 +339,11 @@ class Window(QMainWindow):
         self.volume.valueChanged.connect(lambda value: self.audio.setVolume(value / 100))
         volume_row.addWidget(self.volume)
         listen_layout.addLayout(volume_row)
+        self.retry_voice = QPushButton("↻  Tách lại file đang nghe bằng AI")
+        self.retry_voice.setToolTip("Chọn file giọng ở mục nghe thử rồi chạy thêm một lượt tách AI. Giữ bản trước để đối chiếu.")
+        self.retry_voice.setEnabled(False)
+        self.retry_voice.clicked.connect(self.reseparate_current)
+        listen_layout.addWidget(self.retry_voice)
         listen_layout.addStretch()
         middle.addWidget(listen_card, 2)
         layout.addLayout(middle)
@@ -574,30 +580,45 @@ class Window(QMainWindow):
     def update_export_labels(self):
         extract = self.mode.currentData() == "extract"
         speech = self.mode.currentData() == "speech"
+        reseparate = self.mode.currentData() == "reseparate"
         if speech and not self.cleanup.currentData():
             self.cleanup.setCurrentIndex(1)
         extension = self.fmt.currentText().lower()
         self.quality_note.setText("Giữ toàn bộ âm thanh, không chạy AI." if extract else
             "Mô hình lời thoại chạy CPU 2 luồng; có thể làm giọng đổi màu. Hãy thử 30 giây trước." if speech else
+            "Tách nguồn AI thêm 1 lượt trên file giọng. Có thể giảm nhạc sót nhưng làm mất chi tiết giọng; nên thử 30 giây. " + MODES[self.quality.currentData()][1] if reseparate else
             MODES[self.quality.currentData()][1])
         busy = self.worker is not None and self.worker.isRunning()
         self.quality.setEnabled(not busy and not extract and not speech)
         self.cleanup.setEnabled(not busy and not extract)
         self.device.setEnabled(not busy and not extract and not speech)
         self.try_button.setEnabled(not busy)
-        self.export_title.setText("Xuất âm thanh từ video / audio" if extract else "Lọc lời thoại đã tách" if speech else "Xuất giọng nói & nhạc nền")
-        names = f"am_thanh.{extension}" if extract else f"giong_goc.{extension}  +  giong_loc.{extension}" if speech else (
-            f"giong.{extension}  +  nhac_nen.{extension}" + (f"  +  giong_loc.{extension}" if self.cleanup.currentData() else ""))
-        self.output_names.setText(names)
+        self.export_title.setText("Xuất âm thanh từ video / audio" if extract else "Lọc lời thoại đã tách" if speech else "Tách lại file giọng bằng AI" if reseparate else "Xuất giọng nói & nhạc nền")
+        self.output_names.setText("  +  ".join(expected_outputs(self.mode.currentData(), extension, self.cleanup.currentData())))
         count = len(self.files)
-        action = "TRÍCH ÂM THANH" if extract else "LỌC LỜI THOẠI" if speech else "TÁCH NHẠC NỀN TỰ ĐỘNG"
+        action = "TRÍCH ÂM THANH" if extract else "LỌC LỜI THOẠI" if speech else "TÁCH LẠI GIỌNG BẰNG AI" if reseparate else "TÁCH NHẠC NỀN TỰ ĐỘNG"
         detail = f"Xử lý {count} file trong danh sách" if count > 1 else (
-            "Giữ toàn bộ âm thanh của file" if extract else "Giữ cả bản trước và sau lọc" if speech else "Xuất giọng + nhạc nền riêng biệt")
+            "Giữ toàn bộ âm thanh của file" if extract else "Giữ cả bản trước và sau lọc" if speech else "Giữ bản trước và sau tách lại" if reseparate else "Xuất giọng + nhạc nền riêng biệt")
         self.start.setText(action + "\n" + detail)
     def change_media(self, *_):
         self.player.stop()
         path = self.preview.currentData()
         self.player.setSource(QUrl.fromLocalFile(path) if path else QUrl())
+        self.retry_voice.setEnabled(bool(path) and not (self.worker and self.worker.isRunning()))
+    def reseparate_current(self):
+        if self.worker and self.worker.isRunning():
+            return
+        path = self.preview.currentData()
+        if not path or not Path(path).is_file():
+            QMessageBox.information(self, "Chọn file giọng", "Chọn file giọng cần xử lý lại trong mục nghe thử.")
+            return
+        path = str(Path(path).resolve())
+        self.append_files([path])
+        row = self.files.index(path)
+        self.table.selectRow(row)
+        self.mode.setCurrentIndex(self.mode.findData("reseparate"))
+        self.options_toggle.setChecked(True)
+        self.run_batch(rows=[row])
     def toggle_play(self):
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
@@ -609,12 +630,15 @@ class Window(QMainWindow):
         self.time.setText(f"{clock(position/1000)} / {clock(self.player.duration()/1000)}")
     def lock(self, busy):
         for widget in [self.add, self.add_folder, self.clear, self.mode, self.fmt,
-                       self.device, self.dest, self.choose_dest, self.start, self.quality, self.try_button, self.cleanup]:
+                       self.device, self.dest, self.choose_dest, self.start, self.quality, self.try_button, self.cleanup, self.retry_voice]:
             widget.setEnabled(not busy)
         self.stop.setEnabled(busy)
         if not busy:
             self.update_export_labels()
-    def run_batch(self, sample=False):
+            self.retry_voice.setEnabled(bool(self.preview.currentData()))
+    def run_batch(self, sample=False, rows=None):
+        if self.worker and self.worker.isRunning():
+            return
         if not self.files:
             QMessageBox.information(self, "Chưa có file", "Hãy chọn một hoặc nhiều file trước.")
             return
@@ -623,7 +647,7 @@ class Window(QMainWindow):
             return
         selected = self.table.currentRow()
         self.sample_run = bool(sample)
-        self.active_rows = [selected if selected >= 0 else 0] if sample else list(range(len(self.files)))
+        self.active_rows = list(rows) if rows is not None else [selected if selected >= 0 else 0] if sample else list(range(len(self.files)))
         preview_start = (self.player.position() / 1000 if self.preview.currentData() == self.files[self.active_rows[0]] else 0) if sample else None
         self.player.stop()
         self.cancel_previews()
@@ -631,14 +655,15 @@ class Window(QMainWindow):
         self.progress.setFormat("%p%")
         self.error_message.hide()
         if not sample:
-            self.outputs.clear()
+            for row in self.active_rows:
+                self.outputs.pop(row, None)
         for row in self.active_rows:
             self.table.item(row, 1).setText("Chờ xử lý")
             self.table.item(row, 2).setText("")
         self.lock(True)
         self.worker = BatchWorker([self.files[row] for row in self.active_rows], str(Path(self.dest.text().strip()).expanduser()),
             self.mode.currentData(), self.fmt.currentText().lower(),
-            self.device.currentData() if self.mode.currentData() == "separate" else "cpu",
+            self.device.currentData() if self.mode.currentData() in ("separate", "reseparate") else "cpu",
             self.quality.currentData(), self.active_rows, preview_start, self.cleanup.currentData())
         self.worker.status.connect(self.handle_status)
         self.worker.progress.connect(self.progress.setValue)

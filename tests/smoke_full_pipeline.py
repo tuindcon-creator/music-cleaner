@@ -56,3 +56,17 @@ with tempfile.TemporaryDirectory() as directory:
         assert any("Progress update unavailable; audio processing continues." in message for message in messages)
         print("REAL WINDOWS LOCK REGRESSION OK: preflight and filter progress locked; all audio outputs verified.", flush=True)
     print("REAL FULL PIPELINE OK: cached Demucs, DPDFNet, original preserved, three verified outputs.", flush=True)
+    voice = Path(outputs[0])
+    voice_before = voice.read_bytes()
+    repeated = engine.process_file(voice, root / "results", "reseparate", "wav", "cpu",
+        threading.Event(), lambda *_: None, lambda *_: None, print, quality="light")
+    assert repeated.state == "complete", repeated.warning
+    assert [Path(p).name for p in repeated] == ["giong_truoc_tach_lai.wav", "giong_tach_lai.wav", "nhac_tach_lai.wav"]
+    assert voice.read_bytes() == voice_before
+    for path in repeated:
+        audio, rate = sf.read(path, dtype="float32", always_2d=True)
+        assert audio.shape[1] == 2 and np.isfinite(audio).all()
+        assert abs(len(audio)/rate - len(t)/44100) < .002
+    report = json.loads((Path(repeated[0]).parent / "ket_qua.json").read_text(encoding="utf-8"))
+    assert report["mode"] == "reseparate" and report["missing"] == []
+    print("REAL RESEPARATION OK: actual vocal output processed through AI again, before copy and new stems validated.", flush=True)

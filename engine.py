@@ -28,16 +28,22 @@ class ProcessingResult(list):
         super().__init__(paths)
         self.state, self.warning = state, warning
 
+def expected_outputs(mode, fmt, cleanup=0):
+    names = {"extract": ["am_thanh"], "speech": ["giong_goc", "giong_loc"],
+             "separate": ["giong", "nhac_nen"],
+             "reseparate": ["giong_truoc_tach_lai", "giong_tach_lai", "nhac_tach_lai"]}[mode]
+    if cleanup and mode in ("separate", "reseparate"):
+        names = names + ["giong_loc"]
+    return [f"{name}.{fmt}" for name in names]
+
 def write_report(folder, outputs, mode, fmt, cleanup):
-    expected = ([f"am_thanh.{fmt}"] if mode == "extract" else
-                [f"giong_goc.{fmt}", f"giong_loc.{fmt}"] if mode == "speech" else
-                [f"giong.{fmt}", f"nhac_nen.{fmt}"] + ([f"giong_loc.{fmt}"] if cleanup else []))
+    expected = expected_outputs(mode, fmt, cleanup)
     present = [Path(p).name for p in outputs if Path(p).is_file()]
     missing = [name for name in expected if name not in present]
     if missing and outputs.state == "complete":
         outputs.state = "partial"
         outputs.warning = "Thiếu file kết quả: " + ", ".join(missing)
-    report = dict(version="1.3.1", state=outputs.state, requested=expected,
+    report = dict(version="1.4", mode=mode, state=outputs.state, requested=expected,
                   created=present, missing=missing,
                   reason=outputs.warning)
     (folder / "ket_qua.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -243,12 +249,15 @@ def separate_chunks(decoded, scratch, profile, cancel, phase, log, settings=None
 
 def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log,
                  quality="balanced", preview_seconds=None, preview_start=0, cleanup=0):
+    if mode not in ("separate", "extract", "speech", "reseparate"):
+        raise ValueError("Chức năng xử lý không hợp lệ.")
     if cleanup not in (0, 12, 18):
         raise ValueError("Mức lọc lời thoại không hợp lệ.")
     source, root = Path(source), Path(root).expanduser().resolve()
     if not source.is_file():
         raise FileNotFoundError(f"Không tìm thấy: {source}")
-    folder = create_output_folder(root, ("Thu_30s_" if preview_seconds else "") + source.stem, cancel, log)
+    folder = create_output_folder(root, ("Thu_30s_" if preview_seconds else "") +
+                                  ("Tach_lai_" if mode == "reseparate" else "") + source.stem, cancel, log)
     log(f"Thư mục kết quả: {folder}")
     try:
         with tempfile.TemporaryDirectory(prefix="music-cleaner-") as scratch:
@@ -304,7 +313,13 @@ def process_file(source, root, mode, fmt, device, cancel, phase, waveform, log,
                 separated = separate_chunks(decoded, scratch, profile, cancel, phase, log, settings)
                 phase("Xuất giọng và nhạc nền", 85)
                 outputs = ProcessingResult()
-                for stem_path, name in zip(separated, ("giong", "nhac_nen")):
+                if mode == "reseparate":
+                    before = folder / f"giong_truoc_tach_lai.{fmt}"
+                    convert(decoded, before, fmt, cancel, log)
+                    outputs.append(str(before))
+                    log("Đã chạy thêm một lượt tách nguồn AI trên file giọng; giữ bản trước để nghe đối chiếu.")
+                names = ("giong_tach_lai", "nhac_tach_lai") if mode == "reseparate" else ("giong", "nhac_nen")
+                for stem_path, name in zip(separated, names):
                     result = folder / f"{name}.{fmt}"
                     from audio_join import peak_gain
                     gain = peak_gain(stem_path, cancel, Cancelled)
