@@ -179,7 +179,7 @@ class PreviewWorker(QThread):
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Music Cleaner 1.3 • Tách nhạc nền & âm thanh")
+        self.setWindowTitle("Music Cleaner 1.3.1 • Tách nhạc nền & âm thanh")
         screen = QApplication.primaryScreen()
         if screen:
             area = screen.availableGeometry()

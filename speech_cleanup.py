@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import math
+import sys
 from pathlib import Path
 import tempfile
 import urllib.request
@@ -32,7 +33,7 @@ def ensure_model(cache=None, progress=lambda *_: None):
     with tempfile.NamedTemporaryFile(dir=directory, suffix=".download", delete=False) as file:
         temporary = Path(file.name)
     try:
-        request = urllib.request.Request(MODEL_URL, headers={"User-Agent": "MusicCleaner/1.3"})
+        request = urllib.request.Request(MODEL_URL, headers={"User-Agent": "MusicCleaner/1.3.1"})
         with urllib.request.urlopen(request, timeout=45) as response, temporary.open("wb") as file:
             size = 0
             total = int(response.headers.get("Content-Length", 0)) if hasattr(response, "headers") else 0
@@ -125,6 +126,35 @@ class _NeverCancelled:
     def is_set(self):
         return False
 
+class ProgressReporter:
+    """Optional UI telemetry must never abort audio processing on an IO error.
+
+    On Windows a concurrent reader or scanner may deny replacement of the
+    progress JSON. Skip that update; later calls publish the latest state.
+    Audio/model/output IO errors are handled elsewhere and remain fatal.
+    """
+    def __init__(self, path=None):
+        self.path = Path(path) if path else None
+        self.warned = False
+
+    def __call__(self, stage, fraction, message):
+        if self.path is None:
+            return False
+        temporary = self.path.with_suffix(".tmp")
+        try:
+            temporary.write_text(json.dumps(dict(stage=stage, fraction=fraction, message=message)), encoding="utf-8")
+            temporary.replace(self.path)
+            return True
+        except OSError:
+            if not self.warned:
+                print("Progress update unavailable; audio processing continues.", file=sys.stderr, flush=True)
+                self.warned = True
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return False
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input")
@@ -134,12 +164,7 @@ def main():
     parser.add_argument("--strength", type=int, choices=(12, 18), default=12)
     parser.add_argument("--threads", type=int, default=2)
     args = parser.parse_args()
-    def progress(stage, fraction, message):
-        if args.progress:
-            target = Path(args.progress)
-            temporary = target.with_suffix(".tmp")
-            temporary.write_text(json.dumps(dict(stage=stage, fraction=fraction, message=message)), encoding="utf-8")
-            temporary.replace(target)
+    progress = ProgressReporter(args.progress)
     if args.check_model:
         create_denoiser(args.strength, args.threads, progress=progress)
         progress("ready", 1., "Mô hình lời thoại sẵn sàng")

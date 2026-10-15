@@ -1,5 +1,6 @@
 """Real pretrained Demucs -> DPDFNet -> three verified output files on Windows."""
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -10,6 +11,7 @@ import soundfile as sf
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import engine
 from hardware import detect
+from windows_file_lock import deny_delete_share
 
 with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)
@@ -21,9 +23,23 @@ with tempfile.TemporaryDirectory() as directory:
     profile = detect("cpu")
     profile.chunk_seconds = 1  # exercise reuse and joins in the actual child
     updates = []
-    with patch.object(engine, "detect", return_value=profile):
+    messages, locked = [], []
+    real_command = engine.command
+    def command_with_locked_progress(args, cancel, log=lambda *_: None, **kwargs):
+        if os.name == "nt" and "--progress" in args:
+            path = Path(args[args.index("--progress") + 1])
+            path.write_text('{"stage":"locked","fraction":0,"message":"lock regression"}', encoding="utf-8")
+            locked.append(path.name)
+            with deny_delete_share(path):
+                return real_command(args, cancel, log, **kwargs)
+        return real_command(args, cancel, log, **kwargs)
+    def log(message):
+        messages.append(message)
+        print(message, flush=True)
+    with patch.object(engine, "detect", return_value=profile), \
+         patch.object(engine, "command", side_effect=command_with_locked_progress):
         outputs = engine.process_file(source, root / "results", "separate", "wav", "cpu",
-            threading.Event(), lambda *args: updates.append(args), lambda *_: None, print,
+            threading.Event(), lambda *args: updates.append(args), lambda *_: None, log,
             quality="light", cleanup=12)
     assert outputs.state == "complete", outputs.warning
     assert [Path(p).name for p in outputs] == ["giong.wav", "nhac_nen.wav", "giong_loc.wav"]
@@ -35,4 +51,8 @@ with tempfile.TemporaryDirectory() as directory:
     report = json.loads((Path(outputs[0]).parent / "ket_qua.json").read_text(encoding="utf-8"))
     assert report["state"] == "complete" and report["missing"] == []
     assert any("3/3" in message for message, _ in updates)
+    if os.name == "nt":
+        assert locked == ["model_progress.json", "speech_progress.json"], locked
+        assert any("Progress update unavailable; audio processing continues." in message for message in messages)
+        print("REAL WINDOWS LOCK REGRESSION OK: preflight and filter progress locked; all audio outputs verified.", flush=True)
     print("REAL FULL PIPELINE OK: cached Demucs, DPDFNet, original preserved, three verified outputs.", flush=True)

@@ -1,4 +1,4 @@
-# Music Cleaner 1.3 — Windows build
+# Music Cleaner 1.3.1 — Windows build
 
 Ứng dụng tách giọng/nhạc nền, trích âm thanh từ video và xử lý hàng loạt, giao diện tiếng Việt.
 
@@ -15,6 +15,16 @@ Nếu winget không có hoặc bị quản trị viên chặn, cài Python 3.11 
 Không cần cài FFmpeg riêng. Cần Internet cho bộ cài và lần đầu tải mô hình AI.
 AI đọc trực tiếp WAV đã giải mã, không gọi ffprobe trên PATH của Windows.
 Sau khi thư viện và mô hình đã có trên máy, xử lý được offline; không tải media lên dịch vụ.
+
+## Bản 1.3.1 sửa WinError 5 khi cập nhật tiến độ
+
+Nhật ký thực tế cho thấy bộ lọc chạy đến đoạn 63 rồi dừng tại thao tác thay speech_progress.json: Windows từ chối đổi tên khi file tiến độ đang được mở đọc. Đây là lỗi báo tiến độ làm mất kết quả xử lý dài.
+
+- Lỗi ghi/thay/xóa file tiến độ được bỏ qua riêng; tác vụ lọc tiếp tục và lần cập nhật sau thử lại. Không cần chạy với quyền Administrator hoặc tắt bảo vệ Windows.
+- Lỗi đọc mô hình, suy luận hoặc xuất âm thanh vẫn được báo; không giả báo thành công khi thiếu giong_loc.
+- Giữ nguyên mô hình, mức lọc, số luồng và cách xuất âm thanh của 1.3.
+- Hồi quy Windows giữ khóa thật trên file tiến độ, tái hiện PermissionError của cách cũ, rồi chạy toàn bộ Demucs → DPDFNet → ba file kết quả khi cả file tiến độ preflight và lọc bị khóa.
+- Với kết quả cũ, chọn giong.wav và chức năng Lọc lời thoại đã tách để chạy lại bước lọc. Giữ thư mục .venv khi cập nhật trong cùng thư mục ứng dụng.
 
 ## Bản 1.3 sửa thiếu file giọng lọc
 

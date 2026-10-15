@@ -37,7 +37,7 @@ def write_report(folder, outputs, mode, fmt, cleanup):
     if missing and outputs.state == "complete":
         outputs.state = "partial"
         outputs.warning = "Thiếu file kết quả: " + ", ".join(missing)
-    report = dict(version="1.3", state=outputs.state, requested=expected,
+    report = dict(version="1.3.1", state=outputs.state, requested=expected,
                   created=present, missing=missing,
                   reason=outputs.warning)
     (folder / "ket_qua.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
