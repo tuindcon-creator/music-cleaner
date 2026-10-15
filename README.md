@@ -1,1 +1,164 @@
-# music-cleaner
+# Music Cleaner 1.4 — Windows build
+
+Ứng dụng tách giọng/nhạc nền, trích âm thanh từ video và xử lý hàng loạt, giao diện tiếng Việt.
+
+## Chạy trên Windows
+
+1. Tải ZIP ở nhánh music-cleaner-app và giải nén vào thư mục có quyền ghi.
+2. Bản build có **MusicCleaner.exe**: mở file này sau khi giải nén toàn bộ gói. Nếu dùng ZIP mã nguồn, mở **run_windows.bat**. Lần đầu chương trình tự chạy bộ cài nếu thiếu thư viện.
+3. Bộ cài tìm Python 3.11 x64; nếu chưa có, thử cài cho người dùng hiện tại bằng winget.
+4. Bộ cài kiểm tra driver NVIDIA, chọn PyTorch CUDA 12.1 hoặc CPU và thử GPU thực tế.
+5. Chọn file → chức năng → thư mục xuất → Bắt đầu. Giữ thiết bị **Tự động**.
+
+Có thể mở install_windows.bat riêng để cài lại thư viện hoặc sửa môi trường.
+Nếu winget không có hoặc bị quản trị viên chặn, cài Python 3.11 64-bit từ python.org rồi chạy lại.
+Không cần cài FFmpeg riêng. Cần Internet cho bộ cài và lần đầu tải mô hình AI.
+AI đọc trực tiếp WAV đã giải mã, không gọi ffprobe trên PATH của Windows.
+Sau khi thư viện và mô hình đã có trên máy, xử lý được offline; không tải media lên dịch vụ.
+
+## Bản 1.4: tách lại các file giọng chưa đạt
+
+- Trong **Tùy chọn → Chức năng**, chọn **Tách lại giọng bằng AI (còn lẫn nhạc)**, thêm các file giọng cần xử lý và bấm **TÁCH LẠI GIỌNG BẰNG AI**. Áp dụng cho một file hoặc cả danh sách.
+- Ngay tại khung nghe thử, chọn giong.wav/giong_loc.wav hoặc file giọng cần xử lý và bấm **Tách lại file đang nghe bằng AI**. Chỉ file đang nghe được xử lý; kết quả của các hàng khác được giữ trong danh sách.
+- Chạy thêm đúng một lượt tách nguồn Demucs trên file giọng đã chọn. Chọn chất lượng và thiết bị như bước tách ban đầu; Tự động sử dụng GPU khi dùng được.
+- Mỗi lượt xuất vào thư mục riêng có tiền tố **Tach_lai_**, thêm hậu tố khi trùng tên. Giữ file đầu vào nguyên vẹn.
+- **giong_truoc_tach_lai.wav**: bản âm thanh đầu vào để đối chiếu. **giong_tach_lai.wav**: giọng sau lượt AI mới. **nhac_tach_lai.wav**: phần được AI tách ra (có thể gồm cả thành phần giọng bị nhầm).
+- Nếu bật Giảm nhạc sót, tạo thêm **giong_loc.wav** từ giọng vừa tách lại. Có thể chọn WAV/MP3/FLAC.
+- Có **Thử 30 giây** cho chế độ tách lại. Tách lặp nhiều lần có thể làm giọng mất chi tiết; kết quả có thể vẫn còn nhạc. Nên nghe đối chiếu trước khi chạy cả file, ưu tiên dùng đầu vào gốc có chất lượng tốt khi có thể.
+
+## Bản 1.3.1 sửa WinError 5 khi cập nhật tiến độ
+
+Nhật ký thực tế cho thấy bộ lọc chạy đến đoạn 63 rồi dừng tại thao tác thay speech_progress.json: Windows từ chối đổi tên khi file tiến độ đang được mở đọc. Đây là lỗi báo tiến độ làm mất kết quả xử lý dài.
+
+- Lỗi ghi/thay/xóa file tiến độ được bỏ qua riêng; tác vụ lọc tiếp tục và lần cập nhật sau thử lại. Không cần chạy với quyền Administrator hoặc tắt bảo vệ Windows.
+- Lỗi đọc mô hình, suy luận hoặc xuất âm thanh vẫn được báo; không giả báo thành công khi thiếu giong_loc.
+- Giữ nguyên mô hình, mức lọc, số luồng và cách xuất âm thanh của 1.3.
+- Hồi quy Windows giữ khóa thật trên file tiến độ, tái hiện PermissionError của cách cũ, rồi chạy toàn bộ Demucs → DPDFNet → ba file kết quả khi cả file tiến độ preflight và lọc bị khóa.
+- Với kết quả cũ, chọn giong.wav và chức năng Lọc lời thoại đã tách để chạy lại bước lọc. Giữ thư mục .venv khi cập nhật trong cùng thư mục ứng dụng.
+
+## Bản 1.3 sửa thiếu file giọng lọc
+
+- Sửa lỗi có thật ở phần lẻ cuối file: DPDFNet trả âm thanh theo khung STFT, khiến mã cũ từ chối các thời lượng như 30,001 giây và 65,013 giây. Thêm ngữ cảnh ngắn trước suy luận rồi cắt kết quả đúng thời lượng đầu vào; không chèn im lặng thay cho dự đoán bị thiếu.
+- Khi bật giảm nhạc sót, kiểm tra tải/nạp mô hình lời thoại trước bước tách nguồn để phát hiện sớm thư viện/mạng/mô hình bị lỗi.
+- Hiển thị tải mô hình, đoạn/kênh đang lọc và tiến độ thay vì đứng ở một thông báo CPU cố định.
+- Chỉ đặt tên **giong_loc.wav/mp3/flac** sau khi xuất và kiểm tra số kênh/thời lượng. Không hiển thị file xuất dở như kết quả hoàn tất.
+- Kết quả tách có nhưng lọc lỗi/dừng được ghi **chưa đủ kết quả**, không cộng vào số thành công. Giữ bản trước lọc cả ở chức năng Lọc lời thoại đã tách và tiếp tục file kế tiếp khi lỗi.
+- Mỗi thư mục có **ket_qua.json** ghi file cần tạo, đã tạo, còn thiếu và lý do. Có thể xem bằng Notepad.
+- Không đổi lựa chọn lọc mặc định: **Tắt — không tạo giong_loc**. Muốn có bản lọc, chọn **Nhẹ** hoặc **Mạnh hơn**; các mức này có thể ảnh hưởng giọng.
+- Với file đã tách, chọn giong.wav → chức năng **Lọc lời thoại đã tách** để chỉ chạy bước còn thiếu, tránh chạy lại Demucs.
+
+## Bản 1.2 tăng tốc
+
+- Một tiến trình AI cho mỗi file, dùng lại mô hình đã tải giữa các đoạn. Bản cũ khởi động Python và đọc lại trọng số cho từng đoạn.
+- Giữ nguyên mô hình, số lượt dịch chuyển, overlap, xuất float và ghép đoạn; không bật half precision hay thay bộ lọc để tăng tốc.
+- Tiến trình AI đóng sau mỗi file/hủy; không giữ RAM/GPU sau khi xử lý xong. Khi GPU lỗi, khởi động lại tiến trình sạch cho CPU.
+- Nhật ký báo tốc độ tính theo thời lượng và thời gian AI còn lại ước tính sau mỗi đoạn. Ước tính chưa gồm bước lọc lời thoại/xuất file.
+- Bước lọc lời thoại bổ sung vẫn chạy CPU 2 luồng. Khi bật bước này, GPU xong việc vẫn cần chờ CPU.
+- Với RTX 3060, bắt đầu bằng **Cân bằng + thiết bị Tự động** nếu ưu tiên tốc độ. **Lọc kỹ** dùng 4 mô hình và 2 lượt dịch chuyển nên vẫn lâu hơn; giữ nguyên lựa chọn nếu cần chất lượng đó.
+- Chưa có số đo tăng tốc trên RTX 3060 của bạn; mức cải thiện phụ thuộc thời lượng file, chế độ, CPU/GPU và bộ nhớ.
+
+## Bản 1.1 có gì mới
+
+- Launcher Windows biên dịch, đi kèm ZIP; launcher mở môi trường Python của ứng dụng, không phải EXE độc lập chứa toàn bộ AI.
+- Kiểm tra GPU trong tiến trình con, cache kết quả 5 phút; giao diện không phải giữ PyTorch để kiểm tra GPU.
+- Nâng cấp thư viện mà giữ bản PyTorch/driver đang hoạt động, hạn chế tải lại các gói lớn.
+- Chức năng **Lọc lời thoại đã tách** chạy trực tiếp trên giong.wav, không cần tách nguồn lại.
+- Tùy chọn giảm nhạc sót **Tắt / Nhẹ / Mạnh hơn**. Mặc định tắt khi tách video.
+- Giữ bản trước lọc; nếu lọc bổ sung lỗi hoặc bị dừng sau khi tách xong, vẫn giữ kết quả tách đã hoàn tất.
+- Mô hình lời thoại DPDFNet 48 kHz qua sherpa-onnx, chỉ CPU 2 luồng, chia phần 30 giây có chồng lấn để hạn chế RAM.
+- Cache mô hình lời thoại ở ~/.cache/music-cleaner/models, tải từ nguồn GitHub chính thức và xác minh SHA-256. Trọng số khoảng 10 MB; thư viện được cài riêng lần đầu.
+
+Nếu giọng đã tách vẫn còn nhạc: chọn giong.wav → Tùy chọn → **Lọc lời thoại đã tách** → mức **Nhẹ** → **Thử 30 giây**.
+Nghe đối chiếu giong_goc và giong_loc trước khi chạy hàng loạt. Mạnh hơn có thể làm giọng đổi màu.
+Khi tách video bình thường, chọn Ưu tiên giọng và chỉ bật giảm nhạc sót nếu đã nghe thử phù hợp.
+Không cam kết hết nhạc tuyệt đối và không biến đổi giọng; các mô hình vẫn có thể nhầm nhạc với giọng.
+Không tải file âm thanh/video của bạn lên dịch vụ; Internet chỉ dùng để tải thư viện/mô hình.
+
+## Giao diện mới
+
+Bố cục theo ảnh tham khảo: thông tin file ở trên, sóng âm có mốc thời gian, hàng đợi và khung nghe thử, phần xuất kết quả với nút xanh lớn.
+Sóng âm được đọc ngay sau khi chọn file và giữ đúng theo file đang chọn trong danh sách.
+Chỉnh âm lượng ở khung nghe thử. Chọn WAV/MP3/FLAC ở phần xuất file.
+Bấm **Tùy chọn** để đổi sang trích âm thanh hoặc chọn thiết bị; mặc định AI và thiết bị tự động.
+Bấm **Nhật ký xử lý** để xem chi tiết; nhật ký tự mở khi có lỗi.
+Tên file kết quả chỉ hiển thị, không phải ô đổi tên; mỗi file vẫn có thư mục xuất riêng.
+Bảng hiển thị hàng đợi, không phải các đoạn phát hiện nhạc. Không tô các vùng xanh/đỏ nhận diện nhạc khi chưa có chức năng này.
+
+## Chế độ tách và ưu tiên giữ giọng
+
+Chọn chế độ ngay ở phần xuất file:
+
+| Chế độ | Cách xử lý | Tài nguyên |
+| --- | --- | --- |
+| Tự động | Cân bằng trên GPU, Nhẹ trên CPU | Theo cấu hình |
+| Nhẹ | htdemucs, không tăng cường dịch chuyển, đoạn ngắn, tối đa 2 luồng | Thấp hơn |
+| Cân bằng | htdemucs, 1 lượt tăng cường, tối đa 4 luồng | Vừa |
+| Ưu tiên giọng | htdemucs_ft gồm nhiều mô hình tinh chỉnh, 1 lượt tăng cường | Chậm hơn |
+| Lọc kỹ | htdemucs_ft, 2 lượt tăng cường | Chậm nhất trong các lựa chọn |
+
+Với lời thoại trên RTX 3060, nên bắt đầu bằng Ưu tiên giọng rồi bấm **Thử 30 giây**.
+Nếu cần nhẹ, chọn Nhẹ hoặc Tự động. Không có chế độ vừa mạnh nhất vừa nhanh/nhẹ nhất.
+htdemucs_ft cần tải thêm các trọng số ở lần đầu, sau đó dùng cache offline.
+RAM trống dưới 3 GB sẽ tự hạ chế độ tinh chỉnh về Cân bằng và ghi lý do trong nhật ký.
+
+**Thử 30 giây** chỉ xử lý file đang chọn, xuất vào thư mục có tiền tố Thu_30s_.
+Khi nghe bản gốc, mẫu thử bắt đầu từ vị trí hiện tại trên thanh nghe thử; khi chọn kết quả, thử từ đầu file.
+Kết quả thử xuất tối đa 30 giây; file ngắn hơn sẽ có thời lượng ngắn hơn.
+Mẫu thử không đổi sóng âm/thông tin thời lượng toàn file và không thay thế kết quả cả file.
+Chọn giong.wav (thử 30s) trong khung nghe thử để đối chiếu với bản gốc.
+
+Các chế độ tách nguồn không thêm EQ/noise gate; bộ lọc lời thoại bổ sung là lựa chọn riêng, mặc định tắt. AI vẫn có thể làm đổi giọng hoặc còn nhạc;
+không thể bảo đảm tuyệt đối hết nhạc và giữ nguyên giọng. Tên Ưu tiên giọng thể hiện cách chọn mô hình, không phải cam kết không biến dạng.
+Ghép đoạn bằng chồng lấn/crossfade có căn thời gian. Trung gian giữ WAV float, tránh thay đổi mức âm mỗi đoạn.
+Nếu có mẫu vượt biên PCM, giảm một mức âm cố định cho toàn stem trước xuất; không dùng limiter/compressor.
+Khuyên xuất WAV hoặc FLAC khi cần so sánh chất lượng, giữ bản gốc để đối chiếu.
+
+## Tự nhận diện cấu hình
+
+- Đọc hệ điều hành, kiến trúc, số luồng CPU, tổng RAM và RAM còn trống.
+- Chỉ dùng CUDA khi PyTorch cấp phát và tính toán được trên GPU, VRAM ít nhất 2 GB.
+- AMD/Intel hoặc NVIDIA không tương thích dùng CPU.
+- GPU thiếu bộ nhớ/lỗi CUDA hoặc MPS khi tách sẽ thử lại đoạn đó trên CPU.
+- Chọn đoạn AI nội bộ 4 hoặc 7 giây và chia file dài thành phần 30/60/90 giây theo RAM trống.
+- Chạy hàng đợi tuần tự; giới hạn luồng tính toán tối đa 8.
+- Kiểm tra dung lượng ổ đĩa trước bước AI; báo lỗi thay vì giữ kết quả chưa hoàn tất.
+- Thông tin lựa chọn hiện trong nhật ký. system_report.json ghi cấu hình lúc cài, không chứa mật khẩu.
+
+Nếu đã cài bản CPU trước đây và muốn tự phát hiện NVIDIA lại, chạy install_windows.bat.
+Khi chép ứng dụng sang máy khác, không chép .venv; chạy run_windows.bat để cài theo máy mới.
+PowerShell ExecutionPolicy Bypass chỉ áp dụng cho tiến trình bộ cài; không đổi chính sách hệ thống.
+
+## Nền tảng hỗ trợ
+
+Windows 10/11 x64 là mục tiêu chính, có kiểm tra CI. Cần ổ đĩa đủ chỗ cho thư viện và WAV tạm.
+Khuyên dùng RAM từ 4 GB cho CPU; dưới mức này có thể không đủ bộ nhớ cho mô hình.
+Không bảo đảm chạy trên mọi máy: Windows 32-bit, Windows cũ và Windows ARM native chưa hỗ trợ.
+Máy không có quyền cài phần mềm, mạng bị chặn hoặc quá thiếu bộ nhớ cần xử lý điều kiện đó trước.
+
+Linux x64 và macOS Apple Silicon có script bổ sung: cài Python 3.11 rồi chạy
+`sh install_unix.sh`, sau đó `.venv/bin/python app.py`.
+Hai nền tảng này chưa có bộ cài tự cài Python; Mac Intel/ARM Linux chưa được hỗ trợ bởi bộ phiên bản ghim.
+Apple GPU được thử qua MPS, nhưng Demucs có thể cần quay về CPU.
+
+## Kết quả và chất lượng
+
+Xuất WAV, MP3 192 kbps hoặc FLAC. Tách AI xuất giong và nhac_nen; trích âm thanh xuất am_thanh.
+Mỗi file có thư mục riêng, thêm hậu tố khi tên trùng; file lỗi không chặn hàng đợi.
+Tên thư mục kết quả được chuẩn hóa cho Windows: bỏ dấu chấm/khoảng trắng cuối tên, thay ký tự cấm, tránh tên dành riêng và rút ngắn tên dài. Không đổi tên video/audio gốc.
+Kiểm tra ghi vào thư mục xuất trước khi giải mã hoặc chạy AI; đường dẫn quá dài cần chọn thư mục ngắn hơn.
+Có nghe thử bản gốc/kết quả, sóng âm, nhật ký và nút dừng.
+Nếu lỗi, nguyên nhân hiện phía trên nhật ký; dùng Lưu nhật ký lỗi để xuất thông tin chẩn đoán.
+
+Demucs tách nguồn vocals/accompaniment, không bảo đảm lời thoại sạch tuyệt đối.
+Bản này tách toàn bộ file, chưa tự nhận diện từng đoạn có nhạc theo hình tham khảo.
+Chồng lấn/crossfade giảm chuyển tiếp đột ngột ở ranh giới phần; vẫn có thể còn khác biệt do dự đoán AI.
+Sóng âm là của file vừa xử lý; tiến độ theo giai đoạn, không phải phần trăm suy luận chính xác.
+File nhiều giờ vẫn cần nhiều dung lượng đĩa; WAV PCM16 tạm có giới hạn kích thước RIFF khoảng 4 GB.
+Không xuất lại video đã thay giọng. Bản build có launcher EXE; bộ AI vẫn chạy trong môi trường Python được tự cài.
+
+## Kiểm thử
+
+`python -m unittest discover -s tests -v`
+
+Windows CI kiểm tra bộ cài thật, Demucs CLI, xử lý FFmpeg, chọn cấu hình, fallback và GUI offscreen.
+Mô hình giả dùng trong kiểm thử điều phối; không thay thế việc kiểm chứng chất lượng trên bản thu thật.
